@@ -130,6 +130,7 @@ pub enum DiscoverError {
     InvalidRelease,
     InvalidRepository(String),
     InvalidPowerState,
+    InvalidPackageManagerState,
 }
 
 pub fn discover_host(backend: &impl DiscoveryBackend) -> Result<HostFacts, DiscoverError> {
@@ -150,7 +151,7 @@ pub fn discover_host(backend: &impl DiscoveryBackend) -> Result<HostFacts, Disco
         .run("snapper", &["--no-dbus", "--config", "root", "get-config"])?
         .success;
     let rpm_database_healthy = backend.run("rpm", &["--verifydb"])?.success;
-    let package_lock_free = backend.read(Path::new("/run/zypp.pid")).is_err();
+    let package_lock_free = discover_package_lock(backend)?;
     let available_bytes = backend.available_bytes(Path::new("/"))?;
     let (on_battery, battery_percent) = discover_power(backend)?;
     let secure_boot_enabled = discover_secure_boot(backend);
@@ -201,6 +202,25 @@ pub fn discover_host(backend: &impl DiscoveryBackend) -> Result<HostFacts, Disco
     })
 }
 
+fn discover_package_lock(backend: &impl DiscoveryBackend) -> Result<bool, DiscoverError> {
+    let marker = match backend.read(Path::new("/run/zypp.pid")) {
+        Ok(marker) => marker,
+        Err(_) => return Ok(true),
+    };
+    let marker = marker.trim();
+    if marker.is_empty() {
+        return Ok(true);
+    }
+    let pid = marker
+        .parse::<u32>()
+        .ok()
+        .filter(|pid| *pid > 0)
+        .ok_or(DiscoverError::InvalidPackageManagerState)?;
+    Ok(backend
+        .read(Path::new(&format!("/proc/{pid}/comm")))
+        .is_err())
+}
+
 struct ParsedRelease {
     version: String,
     architecture: String,
@@ -246,7 +266,7 @@ fn discover_power(backend: &impl DiscoveryBackend) -> Result<(bool, Option<u8>),
     for entry in entries {
         if !entry
             .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':'))
         {
             return Err(DiscoverError::InvalidPowerState);
         }
@@ -498,6 +518,72 @@ mod tests {
         let facts = discover_host(&fixture).unwrap();
         assert!(facts.on_battery);
         assert_eq!(facts.battery_percent, Some(35));
+    }
+
+    #[test]
+    fn accepts_kernel_usb_c_power_supply_names() {
+        let mut fixture = fixture();
+        fixture.directories.insert(
+            "/sys/class/power_supply".into(),
+            vec!["BAT1".into(), "ucsi-source-psy-USBC000:001".into()],
+        );
+        fixture.files.extend(BTreeMap::from([
+            (
+                "/sys/class/power_supply/BAT1/type".into(),
+                "Battery\n".into(),
+            ),
+            (
+                "/sys/class/power_supply/BAT1/capacity".into(),
+                "100\n".into(),
+            ),
+            (
+                "/sys/class/power_supply/ucsi-source-psy-USBC000:001/type".into(),
+                "USB_C\n".into(),
+            ),
+            (
+                "/sys/class/power_supply/ucsi-source-psy-USBC000:001/online".into(),
+                "1\n".into(),
+            ),
+        ]));
+
+        let facts = discover_host(&fixture).unwrap();
+        assert!(!facts.on_battery);
+        assert_eq!(facts.battery_percent, Some(100));
+    }
+
+    #[test]
+    fn ignores_empty_or_stale_zypp_pid_markers() {
+        let mut empty = fixture();
+        empty.files.insert("/run/zypp.pid".into(), "\n".into());
+        assert!(discover_host(&empty).unwrap().package_lock_free);
+
+        let mut stale = fixture();
+        stale.files.insert("/run/zypp.pid".into(), "4242\n".into());
+        assert!(discover_host(&stale).unwrap().package_lock_free);
+    }
+
+    #[test]
+    fn detects_a_live_zypp_pid() {
+        let mut fixture = fixture();
+        fixture
+            .files
+            .insert("/run/zypp.pid".into(), "4242\n".into());
+        fixture
+            .files
+            .insert("/proc/4242/comm".into(), "zypper\n".into());
+        assert!(!discover_host(&fixture).unwrap().package_lock_free);
+    }
+
+    #[test]
+    fn rejects_a_malformed_zypp_pid_marker() {
+        let mut fixture = fixture();
+        fixture
+            .files
+            .insert("/run/zypp.pid".into(), "not-a-pid\n".into());
+        assert_eq!(
+            discover_host(&fixture),
+            Err(DiscoverError::InvalidPackageManagerState)
+        );
     }
 
     #[test]

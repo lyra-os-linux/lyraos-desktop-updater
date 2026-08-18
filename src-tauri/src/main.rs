@@ -14,6 +14,11 @@ struct ServiceProcess {
 struct ServiceClient(Mutex<Option<ServiceProcess>>);
 
 #[tauri::command]
+fn layout_preview_enabled() -> bool {
+    std::env::var_os("LYRA_UPGRADE_LAYOUT_PREVIEW").is_some()
+}
+
+#[tauri::command]
 fn service_request(
     request: serde_json::Value,
     client: tauri::State<'_, ServiceClient>,
@@ -66,7 +71,10 @@ fn service_request(
 fn main() {
     tauri::Builder::default()
         .manage(ServiceClient::default())
-        .invoke_handler(tauri::generate_handler![service_request])
+        .invoke_handler(tauri::generate_handler![
+            service_request,
+            layout_preview_enabled
+        ])
         .run(tauri::generate_context!())
         .expect("failed to run Lyra Upgrade");
 }

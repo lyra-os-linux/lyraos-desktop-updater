@@ -26,6 +26,7 @@ use uuid::Uuid;
 
 struct Service {
     state_root: PathBuf,
+    caller_uid: u32,
     plans: HashMap<String, PendingPlan>,
     events: HashMap<String, Arc<Mutex<EventLog>>>,
     workers: Arc<(Mutex<usize>, Condvar)>,
@@ -38,9 +39,10 @@ struct PendingPlan {
 }
 
 impl Service {
-    fn new() -> Self {
+    fn new(caller_uid: u32) -> Self {
         Self {
             state_root: PathBuf::from("/var/lib/lyra-upgrade/operations"),
+            caller_uid,
             plans: HashMap::new(),
             events: HashMap::new(),
             workers: Arc::new((Mutex::new(0), Condvar::new())),
@@ -115,6 +117,7 @@ impl Service {
             updated_at: now,
         };
         if save_state(&self.state_root, &state).is_err()
+            || save_operation_owner(&self.state_root, &operation_id, self.caller_uid).is_err()
             || save_pending_plan(
                 &self.state_root,
                 &operation_id,
@@ -182,6 +185,7 @@ impl Service {
             updated_at: now,
         };
         if save_state(&self.state_root, &state).is_err()
+            || save_operation_owner(&self.state_root, &operation_id, self.caller_uid).is_err()
             || save_pending_plan(
                 &self.state_root,
                 &operation_id,
@@ -223,6 +227,9 @@ impl Service {
         if !confirmed {
             return rejected(request_id, "CONFIRMATION_REQUIRED");
         }
+        if !operation_owned_by(&self.state_root, &operation_id, self.caller_uid) {
+            return rejected(request_id, "OPERATION_NOT_FOUND");
+        }
         let planned = self
             .plans
             .get(&operation_id)
@@ -250,6 +257,7 @@ impl Service {
             operation_id: operation_id.clone(),
             state_root: self.state_root.clone(),
             log,
+            current_state: Mutex::new(state.state),
         };
         let state_root = self.state_root.clone();
         let workers = self.workers.clone();
@@ -305,6 +313,9 @@ impl Service {
     }
 
     fn status(&self, request_id: String, operation_id: String, after: u64) -> Response {
+        if !operation_owned_by(&self.state_root, &operation_id, self.caller_uid) {
+            return rejected(request_id, "OPERATION_NOT_FOUND");
+        }
         let state = match load_state(&self.state_root, &operation_id) {
             Ok(state) => state,
             Err(_) => return rejected(request_id, "OPERATION_NOT_FOUND"),
@@ -327,6 +338,9 @@ impl Service {
     }
 
     fn cancel(&mut self, request_id: String, operation_id: String) -> Response {
+        if !operation_owned_by(&self.state_root, &operation_id, self.caller_uid) {
+            return rejected(request_id, "OPERATION_NOT_FOUND");
+        }
         let mut state = match load_state(&self.state_root, &operation_id) {
             Ok(state) => state,
             Err(_) => return rejected(request_id, "OPERATION_NOT_FOUND"),
@@ -350,6 +364,9 @@ impl Service {
         operation_id: String,
         action: RecoveryAction,
     ) -> Response {
+        if !operation_owned_by(&self.state_root, &operation_id, self.caller_uid) {
+            return rejected(request_id, "OPERATION_NOT_FOUND");
+        }
         let mut state = match load_state(&self.state_root, &operation_id) {
             Ok(state) => state,
             Err(_) => return rejected(request_id, "OPERATION_NOT_FOUND"),
@@ -395,6 +412,63 @@ impl Service {
     }
 }
 
+fn save_operation_owner(
+    root: &std::path::Path,
+    operation_id: &str,
+    uid: u32,
+) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    if !valid_operation_id(operation_id) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "invalid operation id",
+        ));
+    }
+    let directory = root.join(operation_id);
+    let path = directory.join("owner");
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(path)?;
+    writeln!(file, "{uid}")?;
+    file.sync_all()
+}
+
+fn operation_owned_by(root: &std::path::Path, operation_id: &str, uid: u32) -> bool {
+    if !valid_operation_id(operation_id) {
+        return false;
+    }
+    let path = root.join(operation_id).join("owner");
+    let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+        return false;
+    };
+    if !metadata.file_type().is_file() || metadata.len() > 32 {
+        return false;
+    }
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|value| value.trim().parse::<u32>().ok())
+        == Some(uid)
+}
+
+fn valid_operation_id(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()
+            }
+        })
+}
+
+fn caller_uid() -> Option<u32> {
+    std::env::var("PKEXEC_UID").ok()?.parse().ok()
+}
+
 fn save_pending_plan(
     root: &std::path::Path,
     operation_id: &str,
@@ -434,6 +508,7 @@ struct Observer {
     operation_id: String,
     state_root: PathBuf,
     log: Arc<Mutex<EventLog>>,
+    current_state: Mutex<OperationState>,
 }
 
 impl ExecutionObserver for Observer {
@@ -444,17 +519,20 @@ impl ExecutionObserver for Observer {
             OutputStream::Stderr => EventSource::ZypperStderr,
         };
         let sequence = next_sequence(&log);
-        let event = technical_event(
-            &self.operation_id,
-            sequence,
-            now(),
-            OperationState::Applying,
-        );
+        let state = self
+            .current_state
+            .lock()
+            .map(|state| *state)
+            .unwrap_or(OperationState::Failed);
+        let event = technical_event(&self.operation_id, sequence, now(), state);
         let event = log.push_technical(event, source, &format!("{program}: {line}"));
         let _ = append_event(&self.state_root, &self.operation_id, &event);
     }
 
     fn state_changed(&self, state: OperationState) {
+        if let Ok(mut current) = self.current_state.lock() {
+            *current = state;
+        }
         let Ok(mut log) = self.log.lock() else { return };
         let event = OperationEvent {
             operation_id: self.operation_id.clone(),
@@ -519,7 +597,11 @@ fn rejected(request_id: String, error_code: &str) -> Response {
 }
 
 fn main() {
-    let mut service = Service::new();
+    let Some(caller_uid) = caller_uid() else {
+        eprintln!("lyra-upgrade-service: missing authenticated caller identity");
+        std::process::exit(1);
+    };
+    let mut service = Service::new(caller_uid);
     for line in io::stdin().lock().lines() {
         let response = match line
             .ok()
@@ -540,5 +622,52 @@ fn main() {
                 .wait(active)
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
         }
+    }
+}
+
+#[cfg(test)]
+mod ownership_tests {
+    use super::{operation_owned_by, save_operation_owner};
+
+    #[test]
+    fn operation_owner_is_required_and_cannot_be_replaced() {
+        let root =
+            std::env::temp_dir().join(format!("lyra-upgrade-owner-test-{}", std::process::id()));
+        let operation = "00000000-0000-4000-8000-000000000000";
+        let directory = root.join(operation);
+        std::fs::create_dir_all(&directory).unwrap();
+
+        assert!(!operation_owned_by(&root, operation, 1000));
+        save_operation_owner(&root, operation, 1000).unwrap();
+        assert!(operation_owned_by(&root, operation, 1000));
+        assert!(!operation_owned_by(&root, operation, 1001));
+        assert!(save_operation_owner(&root, operation, 1001).is_err());
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn symbolic_link_owner_is_rejected() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!(
+            "lyra-upgrade-owner-symlink-test-{}",
+            std::process::id()
+        ));
+        let operation = "00000000-0000-4000-8000-000000000001";
+        let directory = root.join(operation);
+        std::fs::create_dir_all(&directory).unwrap();
+        let target = root.join("owner-target");
+        std::fs::write(&target, b"1000\n").unwrap();
+        symlink(target, directory.join("owner")).unwrap();
+
+        assert!(!operation_owned_by(&root, operation, 1000));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn path_traversal_operation_id_is_rejected() {
+        let root = std::env::temp_dir();
+        assert!(!operation_owned_by(&root, "../../etc", 1000));
+        assert!(save_operation_owner(&root, "../../etc", 1000).is_err());
     }
 }

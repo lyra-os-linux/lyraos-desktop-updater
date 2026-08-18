@@ -5,11 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Lyra Upgrade</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="preview.css">
   <script src="i18n.js" defer></script>
+  <script src="errors.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
   <main class="shell">
+    <aside id="preview-toolbar" class="preview-toolbar" hidden>
+      <strong>Prévia de leiaute</strong>
+      <label for="preview-state">Estado exibido</label>
+      <select id="preview-state">
+        <option value="Checking">Verificando</option>
+        <option value="AwaitingConfirmation">Atualização pronta</option>
+        <option value="Downloading">Baixando pacotes</option>
+        <option value="Snapshotting">Criando snapshot</option>
+        <option value="Applying">Instalando atualizações</option>
+        <option value="AwaitingReboot">Reinicialização necessária</option>
+        <option value="Completed">Concluído</option>
+        <option value="Failed">Falha</option>
+        <option value="NeedsRecovery">Recuperação necessária</option>
+      </select>
+      <span>Somente visual — nenhuma alteração será executada.</span>
+    </aside>
     <header>
       <div>
         <p class="eyebrow" data-i18n="product">LYRA OS · UPDATE</p>

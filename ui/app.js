@@ -6,14 +6,19 @@ document.documentElement.lang=locale;
 document.querySelectorAll("[data-i18n]").forEach(node=>node.textContent=t(node.dataset.i18n));
 document.querySelectorAll("[data-i18n-placeholder]").forEach(node=>node.placeholder=t(node.dataset.i18nPlaceholder));
 
-const state={operationId:null,planHash:null,events:[],lastSequence:0,tab:"events",poll:null};
+const state={operationId:null,planHash:null,events:[],lastSequence:0,tab:"events",poll:null,currentState:"Checking"};
+const persistedOperationKey="lyra-upgrade-active-operation-v1";
 const phases=["Checking","Preflight","Downloading","Snapshotting","Applying","AwaitingReboot","VerifyingBoot","Completed"];
 const progress={Checking:5,Preflight:12,Planned:18,AwaitingConfirmation:18,Downloading:42,Snapshotting:52,Applying:76,ReadyToReboot:85,ApplyingOffline:90,AwaitingReboot:94,VerifyingBoot:97,Completed:100,Failed:100,NeedsRecovery:100,Blocked:12};
 const titleKeys={Planned:"planned",AwaitingConfirmation:"planned",Downloading:"downloading",Snapshotting:"snapshotting",Applying:"applying",ApplyingOffline:"applying",ReadyToReboot:"awaiting_reboot",AwaitingReboot:"awaiting_reboot",Completed:"completed",Failed:"failed",NeedsRecovery:"needs_recovery"};
 
 function request(kind,extra={}){return invoke("service_request",{request:{protocol_version:1,request_id:crypto.randomUUID(),kind,...extra}});}
+function errorMessage(error){const code=String(error?.message||error||"UNKNOWN").replace(/^Error:\s*/,"");return t(`error_${code}`)===`error_${code}`?t("error_UNKNOWN"):t(`error_${code}`);}
+function rememberOperation(){localStorage.setItem(persistedOperationKey,JSON.stringify({operationId:state.operationId,planHash:state.planHash}));}
+function forgetOperation(){localStorage.removeItem(persistedOperationKey);}
 function setError(message){document.querySelector("#error").textContent=message||"";}
 function updateState(name){
+  state.currentState=name;
   const percent=progress[name]??0;
   document.querySelector("#progress-bar").style.width=`${percent}%`;
   document.querySelector("#progress-label").textContent=`${percent}%`;
@@ -31,13 +36,50 @@ function renderDetails(){
   document.querySelector("#console").textContent=visible.filter(e=>e.technical).map(e=>e.technical.text+(e.technical.truncated?" …":"")).join("\n");
 }
 function escapeHtml(value){const node=document.createElement("span");node.textContent=value;return node.innerHTML;}
-async function check(){setError("");updateState("Checking");try{const response=await request("PlanUpdate");if(response.kind!=="Plan")throw new Error(response.error_code||"PREFLIGHT_BLOCKED");state.operationId=response.operation_id;state.planHash=response.plan_sha256;const plan=response.plan;document.querySelector("#plan-summary").hidden=false;document.querySelector("#plan-summary").textContent=`${plan.package_changes.length} ${t("packages")} · ${t("space")}: ${formatBytes(plan.required_bytes)}`;document.querySelector("#confirm").hidden=false;document.querySelector("#check").hidden=true;updateState("AwaitingConfirmation");}catch(error){setError(String(error));updateState("Blocked");}}
-async function confirm(){document.querySelector("#confirm").hidden=true;try{const response=await request("Start",{operation_id:state.operationId,plan_sha256:state.planHash,confirmed:true});if(response.kind==="Rejected")throw new Error(response.error_code);startPolling();}catch(error){setError(String(error));updateState("Failed");}}
-async function poll(){if(!state.operationId)return;try{const response=await request("Status",{operation_id:state.operationId,after_sequence:state.lastSequence});if(response.kind==="Status"){addEvents(response.events);updateState(response.state);if(["Completed","Failed","NeedsRecovery"].includes(response.state)){clearInterval(state.poll);state.poll=null;}}}catch(error){setError(String(error));}}
+async function check(){setError("");updateState("Checking");try{const response=await request("PlanUpdate");if(response.kind!=="Plan")throw new Error(response.error_code||"PREFLIGHT_BLOCKED");state.operationId=response.operation_id;state.planHash=response.plan_sha256;rememberOperation();const plan=response.plan;document.querySelector("#plan-summary").hidden=false;document.querySelector("#plan-summary").textContent=`${plan.package_changes.length} ${t("packages")} · ${t("space")}: ${formatBytes(plan.required_bytes)}`;document.querySelector("#confirm").hidden=false;document.querySelector("#check").hidden=true;updateState("AwaitingConfirmation");}catch(error){setError(errorMessage(error));updateState("Blocked");}}
+async function confirm(){document.querySelector("#confirm").hidden=true;try{const response=await request("Start",{operation_id:state.operationId,plan_sha256:state.planHash,confirmed:true});if(response.kind==="Rejected")throw new Error(response.error_code);startPolling();}catch(error){setError(errorMessage(error));updateState("Failed");}}
+async function poll(){if(!state.operationId)return;try{const response=await request("Status",{operation_id:state.operationId,after_sequence:state.lastSequence});if(response.kind==="Rejected"){if(response.error_code==="OPERATION_NOT_FOUND")forgetOperation();throw new Error(response.error_code);}if(response.kind==="Status"){addEvents(response.events);updateState(response.state);document.querySelector("#check").hidden=true;document.querySelector("#confirm").hidden=response.state!=="AwaitingConfirmation";if(["Completed","Failed","NeedsRecovery"].includes(response.state)){clearInterval(state.poll);state.poll=null;}}}catch(error){setError(errorMessage(error));}}
 function startPolling(){if(state.poll)clearInterval(state.poll);poll();state.poll=setInterval(poll,1000);}
+async function resumeOperation(){
+  let saved;
+  try{saved=JSON.parse(localStorage.getItem(persistedOperationKey)||"null");}catch(_){forgetOperation();return;}
+  if(!saved?.operationId)return;
+  state.operationId=saved.operationId;
+  state.planHash=saved.planHash||null;
+  await poll();
+  if(state.operationId&&!["Completed","Failed","NeedsRecovery"].includes(state.currentState)&&state.poll===null)startPolling();
+}
 function formatBytes(bytes){const units=["B","KiB","MiB","GiB"];let value=bytes,index=0;while(value>=1024&&index<units.length-1){value/=1024;index++;}return `${value.toFixed(index?1:0)} ${units[index]}`;}
 function toggleDetails(){const details=document.querySelector("#details"),button=document.querySelector("#details-toggle"),open=details.hidden;details.hidden=!open;button.ariaExpanded=String(open);button.textContent=t(open?"hide_details":"show_details");if(open)document.querySelector("#events-tab").focus();}
 function chooseTab(tab){state.tab=tab;document.querySelector("#event-list").hidden=tab!=="events";document.querySelector("#console").hidden=tab!=="console";document.querySelector("#events-tab").ariaSelected=String(tab==="events");document.querySelector("#console-tab").ariaSelected=String(tab==="console");}
 async function copyVisible(){const text=state.tab==="console"?document.querySelector("#console").textContent:document.querySelector("#event-list").innerText;await navigator.clipboard.writeText(text);}
 function exportVisible(){const data=JSON.stringify({schema:1,operation_id:state.operationId,events:state.events},null,2);const url=URL.createObjectURL(new Blob([data],{type:"application/json"}));const link=document.createElement("a");link.href=url;link.download=`lyra-upgrade-${state.operationId||"diagnostic"}.json`;link.click();URL.revokeObjectURL(url);}
 document.querySelector("#check").addEventListener("click",check);document.querySelector("#confirm").addEventListener("click",confirm);document.querySelector("#details-toggle").addEventListener("click",toggleDetails);document.querySelector("#events-tab").addEventListener("click",()=>chooseTab("events"));document.querySelector("#console-tab").addEventListener("click",()=>chooseTab("console"));document.querySelector("#copy").addEventListener("click",copyVisible);document.querySelector("#export").addEventListener("click",exportVisible);document.querySelector("#filter").addEventListener("change",renderDetails);document.querySelector("#search").addEventListener("input",renderDetails);renderPhases("Checking");
+
+function previewState(name) {
+  const planned=name==="AwaitingConfirmation";
+  document.querySelector("#plan-summary").hidden=!planned;
+  document.querySelector("#plan-summary").textContent=`18 ${t("packages")} · ${t("space")}: 642.0 MiB`;
+  document.querySelector("#check").hidden=name!=="Checking";
+  document.querySelector("#confirm").hidden=!planned;
+  setError(name==="Failed"?"A atualização não pôde ser concluída. Consulte os detalhes.":name==="NeedsRecovery"?"O sistema precisa ser recuperado pelo snapshot anterior.":"");
+  updateState(name);
+}
+
+async function enableLayoutPreview() {
+  if (!await invoke("layout_preview_enabled")) return false;
+  const toolbar=document.querySelector("#preview-toolbar");
+  toolbar.hidden=false;
+  document.querySelector("#check").disabled=true;
+  document.querySelector("#confirm").disabled=true;
+  addEvents([
+    {sequence:1,occurred_at:"14:32:01",level:"Info",message_id:"Verificação do sistema concluída"},
+    {sequence:2,occurred_at:"14:32:03",level:"Warning",message_id:"Um pacote será mantido na versão atual"},
+    {sequence:3,occurred_at:"14:32:04",level:"Info",message_id:"zypper",technical:{text:"Retrieving repository 'Lyra Updates' metadata…\nReading installed packages…\n18 packages to upgrade."}}
+  ]);
+  toolbar.querySelector("#preview-state").addEventListener("change",event=>previewState(event.target.value));
+  previewState("Checking");
+  return true;
+}
+
+enableLayoutPreview().then(enabled=>{if(!enabled)resumeOperation();});
