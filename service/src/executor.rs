@@ -6,7 +6,8 @@ use lyra_upgrade_core::{
     OperationState, OperationStateRecord, PersistenceError, ReleaseManifest, save_state,
 };
 
-use crate::planner::{PlannedUpdate, PlannerError, plan_update_with_cached_metadata};
+use crate::planner::{PlannerError, plan_update_with_cached_metadata};
+use lyra_upgrade_protocol::PlannedUpdate;
 
 const ZYPPER_UPDATE_POLICY: &[&str] = &[
     "--no-allow-downgrade",
@@ -384,7 +385,7 @@ pub fn execute_update(
         }
     }
 
-    let touches_boot = confirmed.solver.changes.iter().any(|change| {
+    let touches_boot = fresh.solver.changes.iter().any(|change| {
         change.name.starts_with("kernel-")
             || matches!(
                 change.name.as_str(),
@@ -398,7 +399,7 @@ pub fn execute_update(
         require_success("grub2-mkconfig", grub).map_err(ExecutionError::Grub)?;
     }
 
-    let reboot_required = confirmed.solver.reboot_required || code == Some(102) || touches_boot;
+    let reboot_required = fresh.solver.reboot_required || code == Some(102) || touches_boot;
     let package_manager_restart = false;
     let next = if reboot_required {
         OperationState::AwaitingReboot

@@ -12,3 +12,5 @@ tauri-build = { version = "2.6.3", features = [] }
 [dependencies]
 serde_json.workspace = true
 tauri = { version = "2.11.5", features = [] }
+lyra-upgrade-protocol = { path = "../protocol" }
+lyra-upgrade-service = { path = "../service" }

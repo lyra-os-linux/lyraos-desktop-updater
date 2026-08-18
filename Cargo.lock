@@ -1829,6 +1829,8 @@ dependencies = [
 name = "lyra-upgrade-ui"
 version = "0.1.0"
 dependencies = [
+ "lyra-upgrade-protocol",
+ "lyra-upgrade-service",
  "serde_json",
  "tauri",
  "tauri-build",

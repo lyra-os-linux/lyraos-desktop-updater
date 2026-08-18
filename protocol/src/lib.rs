@@ -2,10 +2,12 @@
 
 use std::collections::BTreeMap;
 
-use lyra_upgrade_core::{HostFacts, OperationState, PreflightReport, UpgradePlan};
+use lyra_upgrade_core::{
+    HostFacts, OperationState, PreflightReport, ReleaseManifest, SolverResult, UpgradePlan,
+};
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", deny_unknown_fields)]
@@ -29,6 +31,7 @@ pub enum Request {
         operation_id: String,
         plan_sha256: String,
         confirmed: bool,
+        planned: Box<PlannedUpdate>,
     },
     Status {
         protocol_version: u32,
@@ -122,6 +125,7 @@ pub enum Response {
         plan_sha256: String,
         plan: Box<UpgradePlan>,
         preflight: PreflightReport,
+        planned: Box<PlannedUpdate>,
     },
     Status {
         request_id: String,
@@ -132,6 +136,17 @@ pub enum Response {
         error_code: Option<String>,
         events: Vec<OperationEvent>,
     },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlannedUpdate {
+    pub facts: HostFacts,
+    pub solver: SolverResult,
+    pub preflight: PreflightReport,
+    pub plan: UpgradePlan,
+    pub plan_sha256: String,
+    pub manifest: Option<ReleaseManifest>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -177,7 +192,7 @@ mod tests {
 
     #[test]
     fn rejects_unknown_fields_during_deserialization() {
-        let json = r#"{"kind":"Inspect","protocol_version":1,"request_id":"x","command":"sh"}"#;
+        let json = r#"{"kind":"Inspect","protocol_version":2,"request_id":"x","command":"sh"}"#;
         assert!(serde_json::from_str::<Request>(json).is_err());
     }
 

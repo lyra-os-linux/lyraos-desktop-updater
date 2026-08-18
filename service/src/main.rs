@@ -8,7 +8,7 @@ use lyra_upgrade_core::{
     ReleaseManifest, SystemBackend, discover_host, evaluate_preflight, load_state, save_state,
 };
 use lyra_upgrade_protocol::{
-    EventLevel, EventSource, OperationEvent, RecoveryAction, Request, Response,
+    EventLevel, EventSource, OperationEvent, PlannedUpdate, RecoveryAction, Request, Response,
 };
 use lyra_upgrade_service::event_log::{EventLog, append_event, load_events, technical_event};
 use lyra_upgrade_service::executor::{
@@ -17,9 +17,7 @@ use lyra_upgrade_service::executor::{
 use lyra_upgrade_service::manifest_fetch::{
     fetch_release_manifest, manifest_sequence_path, read_last_manifest_sequence,
 };
-use lyra_upgrade_service::planner::{
-    PlannedUpdate, plan_release_upgrade, plan_update_with_cached_metadata,
-};
+use lyra_upgrade_service::planner::{plan_release_upgrade, plan_update_with_cached_metadata};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
@@ -62,8 +60,9 @@ impl Service {
                 operation_id,
                 plan_sha256,
                 confirmed,
+                planned,
                 ..
-            } => self.start(request_id, operation_id, plan_sha256, confirmed),
+            } => self.start(request_id, operation_id, plan_sha256, confirmed, *planned),
             Request::Status {
                 operation_id,
                 after_sequence,
@@ -136,6 +135,7 @@ impl Service {
             plan_sha256: planned.plan_sha256.clone(),
             plan: Box::new(planned.plan.clone()),
             preflight: planned.preflight.clone(),
+            planned: Box::new(planned.clone()),
         };
         self.plans.insert(
             operation_id.clone(),
@@ -204,6 +204,7 @@ impl Service {
             plan_sha256: planned.plan_sha256.clone(),
             plan: Box::new(planned.plan.clone()),
             preflight: planned.preflight.clone(),
+            planned: Box::new(planned.clone()),
         };
         self.plans.insert(
             operation_id.clone(),
@@ -223,12 +224,54 @@ impl Service {
         operation_id: String,
         plan_sha256: String,
         confirmed: bool,
+        submitted: PlannedUpdate,
     ) -> Response {
         if !confirmed {
             return rejected(request_id, "CONFIRMATION_REQUIRED");
         }
+        if submitted.plan_sha256 != plan_sha256
+            || submitted.plan.sha256().ok().as_deref() != Some(&plan_sha256)
+            || submitted.plan.operation != OperationKind::UpdateWithinRelease
+            || submitted.manifest.is_some()
+            || submitted.facts.release != submitted.plan.source
+            || submitted.solver.changes != submitted.plan.package_changes
+            || submitted.solver.reboot_required != submitted.plan.reboot_required
+        {
+            return rejected(request_id, "PLAN_HASH_MISMATCH");
+        }
         if !operation_owned_by(&self.state_root, &operation_id, self.caller_uid) {
-            return rejected(request_id, "OPERATION_NOT_FOUND");
+            if std::fs::symlink_metadata(self.state_root.join(&operation_id)).is_ok() {
+                return rejected(request_id, "OPERATION_NOT_FOUND");
+            }
+            let timestamp = now();
+            let initial = OperationStateRecord {
+                schema_version: 1,
+                operation_id: operation_id.clone(),
+                sequence: 1,
+                operation: OperationKind::UpdateWithinRelease,
+                state: OperationState::AwaitingConfirmation,
+                source: submitted.facts.release.clone(),
+                target: None,
+                plan_sha256: plan_sha256.clone(),
+                manifest_sha256: None,
+                snapshot_number: None,
+                last_completed_step: Some("planned".to_string()),
+                error_code: None,
+                boot_verification: Some(BootVerification::Pending),
+                created_at: timestamp.clone(),
+                updated_at: timestamp,
+            };
+            let pending = PendingPlan {
+                planned: submitted.clone(),
+                manifest: None,
+            };
+            if save_state(&self.state_root, &initial).is_err()
+                || save_pending_plan(&self.state_root, &operation_id, &pending).is_err()
+                || save_operation_owner(&self.state_root, &operation_id, self.caller_uid).is_err()
+            {
+                return rejected(request_id, "STATE_WRITE_FAILED");
+            }
+            self.plans.insert(operation_id.clone(), pending);
         }
         let planned = self
             .plans

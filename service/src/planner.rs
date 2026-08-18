@@ -1,11 +1,10 @@
 use std::process::{Command, Stdio};
 
 use lyra_upgrade_core::{
-    HostFacts, OperationKind, PlanError, PreflightPolicy, PreflightReport, ReleaseManifest,
-    SolverPolicy, SolverResult, SystemBackend, UpgradePlan, build_plan, discover_host,
-    evaluate_solver_preflight,
+    OperationKind, PlanError, PreflightPolicy, ReleaseManifest, SolverPolicy, SystemBackend,
+    build_plan, discover_host, evaluate_solver_preflight,
 };
-use serde::{Deserialize, Serialize};
+use lyra_upgrade_protocol::PlannedUpdate;
 use sha2::{Digest, Sha256};
 
 use crate::solver_xml::{SolverXmlError, parse_solver_xml};
@@ -19,15 +18,6 @@ pub enum PlannerError {
     Blocked(Vec<lyra_upgrade_core::PreflightIssue>),
     Plan(PlanError),
     Serialize(serde_json::Error),
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-pub struct PlannedUpdate {
-    pub facts: HostFacts,
-    pub solver: SolverResult,
-    pub preflight: PreflightReport,
-    pub plan: UpgradePlan,
-    pub plan_sha256: String,
 }
 
 pub fn plan_update_with_cached_metadata() -> Result<PlannedUpdate, PlannerError> {
@@ -91,6 +81,7 @@ pub fn plan_update_with_cached_metadata() -> Result<PlannedUpdate, PlannerError>
         preflight,
         plan,
         plan_sha256,
+        manifest: None,
     })
 }
 
@@ -186,6 +177,7 @@ pub fn plan_release_upgrade(manifest: &ReleaseManifest) -> Result<PlannedUpdate,
         preflight,
         plan,
         plan_sha256,
+        manifest: Some(manifest.clone()),
     })
 }
 

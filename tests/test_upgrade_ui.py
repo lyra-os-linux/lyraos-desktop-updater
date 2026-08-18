@@ -67,6 +67,17 @@ class UpgradeUiContractTests(unittest.TestCase):
         self.assertIn('return Err("AUTHORIZATION".into())', rust)
         self.assertEqual(errors.count("error_AUTHORIZATION:"), 3)
 
+    def test_planning_is_unprivileged_and_polkit_starts_after_confirmation(self) -> None:
+        rust = (UPGRADE / "src-tauri/src/main.rs").read_text(encoding="utf-8")
+        app = (UPGRADE / "ui/app.js").read_text(encoding="utf-8")
+        self.assertIn("async fn plan_update", rust)
+        self.assertIn("spawn_blocking(plan_update_with_cached_metadata)", rust)
+        self.assertIn('invoke("plan_update"', app)
+        self.assertNotIn('request("PlanUpdate")', app)
+        self.assertIn('request("Start"', app)
+        self.assertLess(app.index('invoke("plan_update"'), app.index('request("Start"'))
+        self.assertIn("planned:state.planned", app)
+
     def test_new_interface_keys_exist_in_all_catalogs(self) -> None:
         catalog = (UPGRADE / "ui/i18n.js").read_text(encoding="utf-8")
         for key in (
