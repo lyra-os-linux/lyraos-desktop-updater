@@ -20,6 +20,7 @@ class UpgradePackagingTests(unittest.TestCase):
             "--sort=name",
             "--owner=0",
             "--group=0",
+            'rm -f -- "$temporary_archive"',
             "gpg --batch --yes --dearmor",
             "SHA256SUMS",
         ):

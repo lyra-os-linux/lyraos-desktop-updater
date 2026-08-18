@@ -49,6 +49,7 @@ make_archive() {
   local member="$2"
   local destination="$3"
   local temporary_archive="$destination.new"
+  rm -f -- "$temporary_archive"
   tar \
     --sort=name \
     --mtime="@$SOURCE_EPOCH" \
@@ -58,7 +59,9 @@ make_archive() {
     --pax-option=delete=atime,delete=ctime \
     -C "$source_dir" \
     -cf - "$member" |
-    zstd --quiet --threads=1 -19 -o "$temporary_archive"
+    # Level 15 remains compact while avoiding the memory/time spike of -19
+    # on the large Tauri vendor tree. One thread keeps output reproducible.
+    zstd --quiet --threads=1 -15 -o "$temporary_archive"
   mv -f -- "$temporary_archive" "$destination"
 }
 
