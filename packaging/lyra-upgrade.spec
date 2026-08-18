@@ -116,6 +116,7 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/org.lyraos.LyraUpgrad
 %{_datadir}/icons/hicolor/512x512/apps/org.lyraos.LyraUpgrade.png
 %{_unitdir}/lyra-upgrade-offline.service
 %{_unitdir}/lyra-upgrade-verify.service
+%dir %{_unitdir}/system-update.target.wants
 %{_unitdir}/system-update.target.wants/lyra-upgrade-offline.service
 %{_unitdir}/multi-user.target.wants/lyra-upgrade-verify.service
 %dir %{_datadir}/lyra-upgrade

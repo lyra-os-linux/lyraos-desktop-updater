@@ -54,6 +54,7 @@ class UpgradePackagingTests(unittest.TestCase):
 
     def test_post_boot_verifier_and_offline_worker_are_enabled(self) -> None:
         spec = (PACKAGING / "lyra-upgrade.spec").read_text(encoding="utf-8")
+        self.assertIn("%dir %{_unitdir}/system-update.target.wants", spec)
         self.assertIn("system-update.target.wants/lyra-upgrade-offline.service", spec)
         self.assertIn("multi-user.target.wants/lyra-upgrade-verify.service", spec)
         self.assertNotIn("groupadd -r lyra-upgrade", spec)
