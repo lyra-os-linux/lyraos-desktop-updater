@@ -43,7 +43,33 @@
       error_UNKNOWN: "Lyra Upgrade no pudo comunicarse con el servicio de actualización."
     }
   };
+  const generated = {
+    "en-US": {
+      retry: "The safety check could not be completed. Resolve the condition and check again.",
+      recovery: "The update stopped after the recovery snapshot. Review details and choose whether to restore it.",
+      restart: "Zypper was updated and must be restarted before the operation can continue."
+    },
+    "pt-BR": {
+      retry: "A verificação de segurança não pôde ser concluída. Corrija a condição e verifique novamente.",
+      recovery: "A atualização parou após o snapshot de recuperação. Revise os detalhes e escolha se deseja restaurá-lo.",
+      restart: "O Zypper foi atualizado e precisa ser reiniciado antes de continuar a operação."
+    },
+    "es-ES": {
+      retry: "No se pudo completar la comprobación de seguridad. Corrige la condición y vuelve a comprobar.",
+      recovery: "La actualización se detuvo después de la instantánea de recuperación. Revisa los detalles y elige si deseas restaurarla.",
+      restart: "Zypper se actualizó y debe reiniciarse antes de continuar la operación."
+    }
+  };
+  const retryCodes=["PLAN_CHANGED","METADATA_REFRESH_FAILED","PLAN_REVALIDATION_FAILED","DOWNLOAD_FAILED","TRANSACTION_BUSY","SYSTEM_UPDATE_BUSY"];
+  const recoveryCodes=["SNAPSHOT_FAILED","ZYPPER_APPLY_FAILED","INITRAMFS_FAILED","BOOTLOADER_FAILED","INVALID_STATE_TRANSITION","OFFLINE_STAGE_FAILED"];
   for (const [locale, additions] of Object.entries(messages)) {
+    for(const code of retryCodes)additions[`error_${code}`]=generated[locale].retry;
+    for(const code of recoveryCodes)additions[`error_${code}`]=generated[locale].recovery;
+    additions.error_ZYPPER_RESTART_REQUIRED=generated[locale].restart;
+    additions.error_REBOOT_FAILED=additions.error_UNKNOWN;
+    additions.error_ROLLBACK_FAILED=generated[locale].recovery;
+    additions.error_RECOVERY_DECLINED=generated[locale].recovery;
+    additions.error_CANCELLED=generated[locale].retry;
     Object.assign(window.LYRA_UPGRADE_CATALOGS[locale], additions);
   }
 })();

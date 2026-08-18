@@ -329,6 +329,8 @@ impl Service {
             operation_id,
             sequence: state.sequence,
             state: state.state,
+            snapshot_number: state.snapshot_number,
+            error_code: state.error_code,
             events,
         }
     }

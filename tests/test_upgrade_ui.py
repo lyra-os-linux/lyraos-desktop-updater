@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import re
 import unittest
 from pathlib import Path
 
@@ -40,6 +41,44 @@ class UpgradeUiContractTests(unittest.TestCase):
         self.assertIn("save_operation_owner", service)
         self.assertIn("operation_owned_by", service)
         self.assertIn('return rejected(request_id, "OPERATION_NOT_FOUND")', service)
+
+    def test_status_exposes_recovery_context_and_ui_actions(self) -> None:
+        protocol = (UPGRADE / "protocol/src/lib.rs").read_text(encoding="utf-8")
+        app = (UPGRADE / "ui/app.js").read_text(encoding="utf-8")
+        html = (UPGRADE / "ui/index.html").read_text(encoding="utf-8")
+        self.assertIn("snapshot_number: Option<u64>", protocol)
+        self.assertIn("error_code: Option<String>", protocol)
+        self.assertIn('recover("Rollback")', app)
+        self.assertIn('recover("KeepCurrent")', app)
+        self.assertIn('invoke("reboot_system")', app)
+        self.assertIn('id="rollback"', html)
+        self.assertIn('id="restart"', html)
+
+    def test_non_cancelable_write_phases_inhibit_window_close(self) -> None:
+        app = (UPGRADE / "ui/app.js").read_text(encoding="utf-8")
+        self.assertIn('window.addEventListener("beforeunload"', app)
+        for state in ("Snapshotting", "Applying", "ReadyToReboot", "ApplyingOffline"):
+            self.assertIn(f'"{state}"', app)
+
+    def test_denied_polkit_authorization_has_a_structured_error(self) -> None:
+        rust = (UPGRADE / "src-tauri/src/main.rs").read_text(encoding="utf-8")
+        errors = (UPGRADE / "ui/errors.js").read_text(encoding="utf-8")
+        self.assertIn("matches!(code, 126 | 127)", rust)
+        self.assertIn('return Err("AUTHORIZATION".into())', rust)
+        self.assertEqual(errors.count("error_AUTHORIZATION:"), 3)
+
+    def test_new_interface_keys_exist_in_all_catalogs(self) -> None:
+        catalog = (UPGRADE / "ui/i18n.js").read_text(encoding="utf-8")
+        for key in (
+            "restart",
+            "rollback",
+            "keep_current",
+            "rollback_confirm",
+            "snapshot",
+            "reboot_yes",
+            "reboot_no",
+        ):
+            self.assertEqual(len(re.findall(rf"\b{key}:", catalog)), 3, key)
 
 
 if __name__ == "__main__":

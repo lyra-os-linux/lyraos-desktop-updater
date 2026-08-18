@@ -19,6 +19,22 @@ fn layout_preview_enabled() -> bool {
 }
 
 #[tauri::command]
+fn reboot_system() -> Result<(), String> {
+    Command::new("systemctl")
+        .arg("reboot")
+        .env_clear()
+        .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_err(|_| "REBOOT_FAILED".to_string())?
+        .success()
+        .then_some(())
+        .ok_or_else(|| "REBOOT_FAILED".to_string())
+}
+
+#[tauri::command]
 fn service_request(
     request: serde_json::Value,
     client: tauri::State<'_, ServiceClient>,
@@ -63,6 +79,16 @@ fn service_request(
         .map_err(|error| error.to_string())?
         == 0
     {
+        if process
+            .child
+            .try_wait()
+            .ok()
+            .flatten()
+            .and_then(|status| status.code())
+            .is_some_and(|code| matches!(code, 126 | 127))
+        {
+            return Err("AUTHORIZATION".into());
+        }
         return Err("service closed the protocol stream".into());
     }
     serde_json::from_str(&response).map_err(|error| format!("invalid service response: {error}"))
@@ -73,7 +99,8 @@ fn main() {
         .manage(ServiceClient::default())
         .invoke_handler(tauri::generate_handler![
             service_request,
-            layout_preview_enabled
+            layout_preview_enabled,
+            reboot_system
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Lyra Upgrade");

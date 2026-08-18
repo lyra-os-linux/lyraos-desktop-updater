@@ -128,6 +128,8 @@ pub enum Response {
         operation_id: String,
         sequence: u64,
         state: OperationState,
+        snapshot_number: Option<u64>,
+        error_code: Option<String>,
         events: Vec<OperationEvent>,
     },
 }
