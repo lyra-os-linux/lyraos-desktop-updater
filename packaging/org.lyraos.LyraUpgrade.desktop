@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Lyra Upgrade
+Name[pt_BR]=Atualização do Lyra
+Name[es]=Actualización de Lyra
+Comment=Install system and release updates safely
+Comment[pt_BR]=Instale atualizações do sistema e de versão com segurança
+Comment[es]=Instale actualizaciones del sistema y de versión de forma segura
+Exec=lyra-upgrade-ui
+Icon=software-update-available
+Terminal=false
+Categories=System;Settings;
+Keywords=update;upgrade;system;
+StartupNotify=true
+DBusActivatable=false

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lyra Upgrade</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="i18n.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <p class="eyebrow" data-i18n="product">LYRA OS · UPDATE</p>
+        <h1 data-i18n="title">Keep your system reliable</h1>
+      </div>
+      <span id="state-pill" class="pill" data-i18n="idle">Ready</span>
+    </header>
+
+    <section class="summary" aria-labelledby="operation-title">
+      <div class="summary-copy">
+        <p class="kicker" data-i18n="summary_kicker">SYSTEM MAINTENANCE</p>
+        <h2 id="operation-title" data-i18n="checking">Check for updates</h2>
+        <p id="operation-message" class="message" data-i18n="checking_help">Review the system before making any change.</p>
+      </div>
+      <div class="progress-wrap" aria-label="Progress">
+        <div class="progress"><span id="progress-bar"></span></div>
+        <strong id="progress-label">0%</strong>
+      </div>
+      <ol id="phases" class="phases"></ol>
+      <div id="plan-summary" class="plan-summary" hidden></div>
+      <p id="error" class="error" role="alert"></p>
+      <div class="actions">
+        <button id="check" class="primary" data-i18n="check">Check</button>
+        <button id="confirm" class="primary" data-i18n="confirm" hidden>Confirm update</button>
+        <button id="details-toggle" class="secondary" aria-expanded="false" data-i18n="show_details">Show details</button>
+      </div>
+    </section>
+
+    <section id="details" class="details" aria-labelledby="details-title" hidden>
+      <div class="details-head">
+        <h2 id="details-title" data-i18n="details">Operation details</h2>
+        <div>
+          <button id="copy" class="quiet" data-i18n="copy">Copy</button>
+          <button id="export" class="quiet" data-i18n="export">Export</button>
+        </div>
+      </div>
+      <div class="tabs" role="tablist">
+        <button id="events-tab" role="tab" aria-selected="true" data-i18n="events">Events</button>
+        <button id="console-tab" role="tab" aria-selected="false" data-i18n="console">Zypper console</button>
+      </div>
+      <div class="toolbar">
+        <select id="filter" aria-label="Filter">
+          <option value="all" data-i18n="filter_all">All</option>
+          <option value="warning" data-i18n="filter_warnings">Warnings</option>
+          <option value="error" data-i18n="filter_errors">Errors</option>
+        </select>
+        <input id="search" type="search" data-i18n-placeholder="search" placeholder="Search details">
+      </div>
+      <div id="event-list" class="event-list" role="log" aria-live="off"></div>
+      <pre id="console" class="console" tabindex="0" hidden></pre>
+      <button id="new-lines" class="new-lines" hidden data-i18n="new_lines">New lines — return to end</button>
+    </section>
+  </main>
+</body>
+</html>

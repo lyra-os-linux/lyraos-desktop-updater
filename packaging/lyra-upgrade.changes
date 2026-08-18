@@ -1,0 +1,6 @@
+-------------------------------------------------------------------
+Mon Aug 18 00:00:00 UTC 2026 - Rodrigo Brito <rodrigo@w3ti.com.br>
+
+- Initial Alpha 6 package with unprivileged planning, typed protocol,
+  restricted update service, offline release upgrade and post-boot verifier.
+- Keep the package out of the image until the final Alpha 6 gate passes.

@@ -1,0 +1,15 @@
+[Unit]
+Description=Verify the last Lyra OS update after boot
+Documentation=https://github.com/britors/Lyra
+After=multi-user.target network-online.target
+Wants=network-online.target
+ConditionPathExists=/var/lib/lyra-upgrade/operations
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/lyra-upgrade-verify
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

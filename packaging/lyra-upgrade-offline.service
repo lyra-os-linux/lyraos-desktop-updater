@@ -1,0 +1,18 @@
+[Unit]
+Description=Apply a staged Lyra OS release upgrade
+Documentation=https://github.com/britors/Lyra
+DefaultDependencies=no
+ConditionPathIsSymbolicLink=/system-update
+After=local-fs.target
+Before=system-update.target shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/lyra-upgrade-offline
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=system-update.target

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+        "https://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>Lyra OS</vendor>
+  <vendor_url>https://github.com/britors/Lyra</vendor_url>
+  <action id="org.lyraos.Upgrade.manage">
+    <description>Manage Lyra OS updates</description>
+    <description xml:lang="pt_BR">Gerenciar atualizações do Lyra OS</description>
+    <description xml:lang="es">Gestionar actualizaciones de Lyra OS</description>
+    <message>Authentication is required to update Lyra OS</message>
+    <message xml:lang="pt_BR">É necessário autenticar para atualizar o Lyra OS</message>
+    <message xml:lang="es">Se requiere autenticación para actualizar Lyra OS</message>
+    <icon_name>software-update-available</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/lyra-upgrade-service</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+</policyconfig>
