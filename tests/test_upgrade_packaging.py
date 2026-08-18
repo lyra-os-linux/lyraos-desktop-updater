@@ -35,6 +35,23 @@ class UpgradePackagingTests(unittest.TestCase):
         self.assertIn("Source3:        release-signing-key.gpg", spec)
         self.assertIn("cargo test --offline --workspace", spec)
 
+    def test_tauri_and_desktop_icons_are_packaged(self) -> None:
+        icons = ROOT / "upgrade" / "src-tauri" / "icons"
+        for name in ("icon.png", "32x32.png", "128x128.png", "256x256.png", "512x512.png"):
+            path = icons / name
+            self.assertTrue(path.is_file(), name)
+            self.assertGreater(path.stat().st_size, 100, name)
+        desktop = (PACKAGING / "org.lyraos.LyraUpgrade.desktop").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Icon=org.lyraos.LyraUpgrade", desktop)
+        spec = (PACKAGING / "lyra-upgrade.spec").read_text(encoding="utf-8")
+        for size in (32, 128, 256, 512):
+            self.assertIn(
+                f"icons/hicolor/{size}x{size}/apps/org.lyraos.LyraUpgrade.png",
+                spec,
+            )
+
     def test_post_boot_verifier_and_offline_worker_are_enabled(self) -> None:
         spec = (PACKAGING / "lyra-upgrade.spec").read_text(encoding="utf-8")
         self.assertIn("system-update.target.wants/lyra-upgrade-offline.service", spec)

@@ -66,6 +66,10 @@ install -Dm0755 target/release/lyra-upgrade-ui \
     %{buildroot}%{_bindir}/lyra-upgrade-ui
 install -Dm0644 packaging/org.lyraos.LyraUpgrade.desktop \
     %{buildroot}%{_datadir}/applications/org.lyraos.LyraUpgrade.desktop
+for size in 32 128 256 512; do
+    install -Dm0644 src-tauri/icons/${size}x${size}.png \
+        %{buildroot}%{_datadir}/icons/hicolor/${size}x${size}/apps/org.lyraos.LyraUpgrade.png
+done
 install -Dm0644 packaging/org.lyraos.Upgrade.policy \
     %{buildroot}%{_datadir}/polkit-1/actions/org.lyraos.Upgrade.policy
 install -Dm0644 packaging/lyra-upgrade-offline.service \
@@ -106,6 +110,10 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/org.lyraos.LyraUpgrad
 %{_libexecdir}/lyra-upgrade-verify
 %{_datadir}/polkit-1/actions/org.lyraos.Upgrade.policy
 %{_datadir}/applications/org.lyraos.LyraUpgrade.desktop
+%{_datadir}/icons/hicolor/32x32/apps/org.lyraos.LyraUpgrade.png
+%{_datadir}/icons/hicolor/128x128/apps/org.lyraos.LyraUpgrade.png
+%{_datadir}/icons/hicolor/256x256/apps/org.lyraos.LyraUpgrade.png
+%{_datadir}/icons/hicolor/512x512/apps/org.lyraos.LyraUpgrade.png
 %{_unitdir}/lyra-upgrade-offline.service
 %{_unitdir}/lyra-upgrade-verify.service
 %{_unitdir}/system-update.target.wants/lyra-upgrade-offline.service
