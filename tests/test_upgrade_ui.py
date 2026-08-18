@@ -88,8 +88,18 @@ class UpgradeUiContractTests(unittest.TestCase):
             "snapshot",
             "reboot_yes",
             "reboot_no",
+            "preview_failed",
+            "preview_recovery",
+            "phase_Checking",
+            "phase_VerifyingBoot",
+            "phase_Completed",
         ):
             self.assertEqual(len(re.findall(rf"\b{key}:", catalog)), 3, key)
+
+    def test_tabs_support_keyboard_navigation(self) -> None:
+        app = (UPGRADE / "ui/app.js").read_text(encoding="utf-8")
+        self.assertIn('"ArrowLeft","ArrowRight"', app)
+        self.assertIn('querySelector(".tabs").addEventListener("keydown",navigateTabs)', app)
 
 
 if __name__ == "__main__":
