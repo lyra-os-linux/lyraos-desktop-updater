@@ -26,12 +26,16 @@ BuildRequires:  pkgconfig(webkit2gtk-4.1)
 BuildRequires:  rust >= 1.85
 BuildRequires:  zstd
 Requires:       curl
+Requires:       coreutils
 Requires:       dracut
 Requires:       gnupg
 Requires:       grub2
+Requires:       mokutil
 Requires:       polkit
+Requires:       rpm
 Requires:       snapper
 Requires:       systemd
+Requires:       util-linux
 Requires:       zypper
 ExclusiveArch:  x86_64
 
@@ -75,13 +79,13 @@ install -Dm0644 %{SOURCE2} \
 install -d %{buildroot}%{_unitdir}/system-update.target.wants
 ln -s %{_unitdir}/lyra-upgrade-offline.service \
     %{buildroot}%{_unitdir}/system-update.target.wants/lyra-upgrade-offline.service
+install -d %{buildroot}%{_unitdir}/multi-user.target.wants
+ln -s %{_unitdir}/lyra-upgrade-verify.service \
+    %{buildroot}%{_unitdir}/multi-user.target.wants/lyra-upgrade-verify.service
 
 %check
 cargo test --offline --workspace
 desktop-file-validate %{buildroot}%{_datadir}/applications/org.lyraos.LyraUpgrade.desktop
-
-%pre
-getent group lyra-upgrade >/dev/null || groupadd -r lyra-upgrade
 
 %post
 %systemd_post lyra-upgrade-offline.service lyra-upgrade-verify.service
@@ -105,6 +109,7 @@ getent group lyra-upgrade >/dev/null || groupadd -r lyra-upgrade
 %{_unitdir}/lyra-upgrade-offline.service
 %{_unitdir}/lyra-upgrade-verify.service
 %{_unitdir}/system-update.target.wants/lyra-upgrade-offline.service
+%{_unitdir}/multi-user.target.wants/lyra-upgrade-verify.service
 %dir %{_datadir}/lyra-upgrade
 %{_datadir}/lyra-upgrade/release-signing-key.gpg
 %{_datadir}/lyra-upgrade/build-source.txt
