@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{OperationKind, ReleaseIdentity};
 
-pub const PLAN_SCHEMA_VERSION: u32 = 1;
+pub const PLAN_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -190,6 +190,8 @@ pub struct UpgradePlan {
     pub manifest_sha256: Option<String>,
     pub required_bytes: u64,
     pub facts: BTreeMap<String, String>,
+    pub repositories: Vec<RepositoryFact>,
+    pub metadata_valid_repositories: Vec<String>,
     pub third_party_repositories: Vec<String>,
     pub held_packages: Vec<String>,
     pub orphaned_packages: Vec<String>,
@@ -255,6 +257,11 @@ pub fn build_plan(
                 .unwrap_or_else(|| "unknown".into()),
         ),
     ]);
+    let mut repositories = facts.repositories.clone();
+    repositories.sort_by(|left, right| left.alias.cmp(&right.alias));
+    let mut metadata_valid_repositories = solver.metadata_valid_repositories.clone();
+    metadata_valid_repositories.sort();
+    metadata_valid_repositories.dedup();
     Ok(UpgradePlan {
         schema_version: PLAN_SCHEMA_VERSION,
         operation,
@@ -263,6 +270,8 @@ pub fn build_plan(
         manifest_sha256,
         required_bytes: report.required_bytes,
         facts: facts_map,
+        repositories,
+        metadata_valid_repositories,
         third_party_repositories: report.third_party_repositories.clone(),
         held_packages: report.held_packages.clone(),
         orphaned_packages: report.orphaned_packages.clone(),
@@ -354,6 +363,39 @@ mod tests {
     }
 
     #[test]
+    fn explicitly_blocks_each_required_host_failure() {
+        fn assert_blocked(mutate: impl FnOnce(&mut HostFacts), expected: PreflightIssue) {
+            let mut facts = healthy_facts();
+            mutate(&mut facts);
+            let report = evaluate_preflight(&facts, PreflightPolicy::default());
+            assert!(report.blockers.contains(&expected));
+        }
+        assert_blocked(
+            |facts| facts.available_bytes = 0,
+            PreflightIssue::InsufficientSpace,
+        );
+        assert_blocked(
+            |facts| facts.snapper_root_configured = false,
+            PreflightIssue::SnapperUnavailable,
+        );
+        assert_blocked(
+            |facts| facts.rpm_database_healthy = false,
+            PreflightIssue::RpmDatabaseUnhealthy,
+        );
+
+        let mut facts = healthy_facts();
+        facts.repositories[0].metadata_valid = false;
+        let report = evaluate_preflight(&facts, PreflightPolicy::default());
+        assert!(
+            report
+                .blockers
+                .contains(&PreflightIssue::RepositoryMetadataInvalid {
+                    alias: "lyra".into(),
+                })
+        );
+    }
+
+    #[test]
     fn plan_hash_is_stable_when_input_lists_arrive_in_another_order() {
         let mut first = healthy_facts();
         first.held_packages = vec!["zeta".into(), "alpha".into()];
@@ -380,6 +422,34 @@ mod tests {
         )
         .unwrap();
         assert_eq!(first_plan.sha256().unwrap(), second_plan.sha256().unwrap());
+    }
+
+    #[test]
+    fn plan_hash_changes_when_repository_inputs_change() {
+        let facts = healthy_facts();
+        let report = evaluate_preflight(&facts, PreflightPolicy::default());
+        let first = build_plan(
+            OperationKind::UpdateWithinRelease,
+            &facts,
+            &report,
+            None,
+            None,
+            &successful_solver(),
+        )
+        .unwrap();
+        let mut changed = facts.clone();
+        changed.repositories[0].official = false;
+        let changed_report = evaluate_preflight(&changed, PreflightPolicy::default());
+        let second = build_plan(
+            OperationKind::UpdateWithinRelease,
+            &changed,
+            &changed_report,
+            None,
+            None,
+            &successful_solver(),
+        )
+        .unwrap();
+        assert_ne!(first.sha256().unwrap(), second.sha256().unwrap());
     }
 
     #[test]

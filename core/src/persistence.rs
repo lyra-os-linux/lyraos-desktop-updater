@@ -4,7 +4,7 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::{OperationStateRecord, STATE_SCHEMA_VERSION};
+use crate::{OperationKind, OperationState, OperationStateRecord, STATE_SCHEMA_VERSION};
 
 #[derive(Debug)]
 pub enum PersistenceError {
@@ -13,6 +13,7 @@ pub enum PersistenceError {
     Io(io::Error),
     Json(serde_json::Error),
     UnsupportedSchema,
+    InvalidState,
 }
 
 impl From<io::Error> for PersistenceError {
@@ -29,6 +30,7 @@ impl From<serde_json::Error> for PersistenceError {
 
 pub fn save_state(root: &Path, state: &OperationStateRecord) -> Result<(), PersistenceError> {
     validate_operation_id(&state.operation_id)?;
+    validate_state(state)?;
     prepare_root(root)?;
     let operation_dir = root.join(&state.operation_id);
     ensure_directory(&operation_dir)?;
@@ -68,7 +70,49 @@ pub fn load_state(
     if state.operation_id != operation_id {
         return Err(PersistenceError::UnsafePath);
     }
+    validate_state(&state)?;
     Ok(state)
+}
+
+fn validate_state(state: &OperationStateRecord) -> Result<(), PersistenceError> {
+    if state.schema_version != STATE_SCHEMA_VERSION {
+        return Err(PersistenceError::UnsupportedSchema);
+    }
+    if !is_sha256(&state.plan_sha256)
+        || state
+            .manifest_sha256
+            .as_deref()
+            .is_some_and(|hash| !is_sha256(hash))
+        || state.snapshot_number == Some(0)
+        || (matches!(
+            state.state,
+            OperationState::Applying
+                | OperationState::ReadyToReboot
+                | OperationState::ApplyingOffline
+                | OperationState::AwaitingReboot
+                | OperationState::VerifyingBoot
+                | OperationState::NeedsRecovery
+                | OperationState::Completed
+        ) && state.snapshot_number.is_none())
+    {
+        return Err(PersistenceError::InvalidState);
+    }
+    let operation_shape_is_valid = match state.operation {
+        OperationKind::UpdateWithinRelease => {
+            state.target.is_none() && state.manifest_sha256.is_none()
+        }
+        OperationKind::ReleaseUpgrade => state.target.is_some() && state.manifest_sha256.is_some(),
+    };
+    operation_shape_is_valid
+        .then_some(())
+        .ok_or(PersistenceError::InvalidState)
+}
+
+fn is_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
 fn prepare_root(root: &Path) -> Result<(), PersistenceError> {
@@ -235,5 +279,52 @@ mod tests {
             Err(PersistenceError::Json(_))
         ));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn refuses_unknown_schema_and_fields() {
+        let root = temporary_root("unknown");
+        save_state(&root, &state()).unwrap();
+        let path = root.join(&state().operation_id).join("state.json");
+        let mut value = serde_json::to_value(state()).unwrap();
+        value["schema_version"] = serde_json::json!(STATE_SCHEMA_VERSION + 1);
+        fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+        assert!(matches!(
+            load_state(&root, &state().operation_id),
+            Err(PersistenceError::UnsupportedSchema)
+        ));
+        value["schema_version"] = serde_json::json!(STATE_SCHEMA_VERSION);
+        value["unknown"] = serde_json::json!(true);
+        fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+        assert!(matches!(
+            load_state(&root, &state().operation_id),
+            Err(PersistenceError::Json(_))
+        ));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn refuses_semantically_tampered_state() {
+        let root = temporary_root("tampered");
+        let mut invalid = state();
+        invalid.plan_sha256 = "not-a-hash".into();
+        assert!(matches!(
+            save_state(&root, &invalid),
+            Err(PersistenceError::InvalidState)
+        ));
+
+        let mut invalid = state();
+        invalid.state = OperationState::Applying;
+        assert!(matches!(
+            save_state(&root, &invalid),
+            Err(PersistenceError::InvalidState)
+        ));
+
+        let mut invalid = state();
+        invalid.snapshot_number = Some(0);
+        assert!(matches!(
+            save_state(&root, &invalid),
+            Err(PersistenceError::InvalidState)
+        ));
     }
 }
