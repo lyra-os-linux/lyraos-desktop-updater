@@ -12,7 +12,7 @@ use lyra_upgrade_protocol::{
 };
 use lyra_upgrade_service::event_log::{EventLog, append_event, load_events, technical_event};
 use lyra_upgrade_service::executor::{
-    ExecutionObserver, OutputStream, execute_update, stage_release_upgrade,
+    ExecutionObserver, OutputStream, execute_update, failure_state, stage_release_upgrade,
 };
 use lyra_upgrade_service::manifest_fetch::{
     fetch_release_manifest, manifest_sequence_path, read_last_manifest_sequence,
@@ -281,7 +281,7 @@ impl Service {
                     None => Err(lyra_upgrade_service::executor::ExecutionError::PlanChanged),
                 },
             };
-            if execution.is_err() {
+            if let Err(error) = execution {
                 if load_state(&state_root, &state.operation_id)
                     .is_ok_and(|saved| saved.error_code.as_deref() == Some("CANCELLED"))
                 {
@@ -291,12 +291,8 @@ impl Service {
                     }
                     return;
                 }
-                state.state = if state.snapshot_number.is_some() {
-                    OperationState::NeedsRecovery
-                } else {
-                    OperationState::Failed
-                };
-                state.error_code = Some("EXECUTION_FAILED".to_string());
+                state.state = failure_state(&error, state.snapshot_number.is_some());
+                state.error_code = Some(error.code().to_string());
                 state.sequence = state.sequence.saturating_add(1);
                 state.updated_at = now();
                 let _ = save_state(&state_root, &state);

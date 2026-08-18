@@ -25,6 +25,7 @@ pub enum ExecutionError {
     InvalidSnapshot,
     Persist(PersistenceError),
     Apply(CommandFailure),
+    PackageManagerRestart(CommandFailure),
     Initramfs(CommandFailure),
     Grub(CommandFailure),
     Transition(lyra_upgrade_core::TransitionError),
@@ -34,10 +35,53 @@ pub enum ExecutionError {
     Cancelled,
 }
 
+impl ExecutionError {
+    pub const fn code(&self) -> &'static str {
+        match self {
+            Self::PlanChanged => "PLAN_CHANGED",
+            Self::Refresh(_) => "METADATA_REFRESH_FAILED",
+            Self::Replan(_) => "PLAN_REVALIDATION_FAILED",
+            Self::Download(_) => "DOWNLOAD_FAILED",
+            Self::Snapshot(_) | Self::InvalidSnapshot => "SNAPSHOT_FAILED",
+            Self::Persist(_) => "STATE_WRITE_FAILED",
+            Self::Apply(_) => "ZYPPER_APPLY_FAILED",
+            Self::PackageManagerRestart(_) => "ZYPPER_RESTART_REQUIRED",
+            Self::Initramfs(_) => "INITRAMFS_FAILED",
+            Self::Grub(_) => "BOOTLOADER_FAILED",
+            Self::Transition(_) => "INVALID_STATE_TRANSITION",
+            Self::Stage(_) => "OFFLINE_STAGE_FAILED",
+            Self::SystemUpdateExists => "SYSTEM_UPDATE_BUSY",
+            Self::Busy => "TRANSACTION_BUSY",
+            Self::Cancelled => "CANCELLED",
+        }
+    }
+
+    pub const fn is_blocking(&self) -> bool {
+        matches!(
+            self,
+            Self::PlanChanged | Self::Refresh(_) | Self::Replan(_) | Self::Download(_) | Self::Busy
+        )
+    }
+}
+
+pub const fn failure_state(error: &ExecutionError, has_snapshot: bool) -> OperationState {
+    if error.is_blocking() && !has_snapshot {
+        OperationState::Blocked
+    } else if has_snapshot {
+        OperationState::NeedsRecovery
+    } else {
+        OperationState::Failed
+    }
+}
+
 struct TransactionLock(std::fs::File);
 
 impl TransactionLock {
     fn acquire() -> Result<Self, ExecutionError> {
+        Self::acquire_at(std::path::Path::new("/run/lock/lyra-upgrade.lock"))
+    }
+
+    fn acquire_at(path: &std::path::Path) -> Result<Self, ExecutionError> {
         use std::os::fd::AsRawFd;
         use std::os::unix::fs::OpenOptionsExt;
         let file = fs::OpenOptions::new()
@@ -46,7 +90,7 @@ impl TransactionLock {
             .create(true)
             .truncate(false)
             .mode(0o600)
-            .open("/run/lock/lyra-upgrade.lock")
+            .open(path)
             .map_err(ExecutionError::Stage)?;
         if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
             return Err(ExecutionError::Busy);
@@ -178,13 +222,7 @@ pub fn stage_release_upgrade(
     );
     let snapshot = require_success("snapper", snapshot).map_err(ExecutionError::Snapshot)?;
     let snapshot_stdout = snapshot.stdout();
-    state.snapshot_number = Some(
-        snapshot_stdout
-            .lines()
-            .rev()
-            .find_map(|line| line.trim().parse::<u64>().ok())
-            .ok_or(ExecutionError::InvalidSnapshot)?,
-    );
+    state.snapshot_number = Some(parse_snapshot_number(&snapshot_stdout)?);
     save_state(state_root, state).map_err(ExecutionError::Persist)?;
     stage_system_update(&operation_dir)?;
     state
@@ -266,6 +304,10 @@ pub fn execute_update(
     observer: &impl ExecutionObserver,
 ) -> Result<ExecutionOutcome, ExecutionError> {
     let _transaction_lock = TransactionLock::acquire()?;
+    state
+        .transition_to(OperationState::Downloading)
+        .map_err(ExecutionError::Transition)?;
+    persist(state_root, state, observer)?;
     let refresh = run_observed("zypper", &["--non-interactive", "refresh"], observer);
     require_success("zypper", refresh).map_err(ExecutionError::Refresh)?;
     if observer.cancel_requested() {
@@ -277,10 +319,6 @@ pub fn execute_update(
         return Err(ExecutionError::PlanChanged);
     }
 
-    state
-        .transition_to(OperationState::Downloading)
-        .map_err(ExecutionError::Transition)?;
-    persist(state_root, state, observer)?;
     let mut download_args = vec![
         "--xmlout",
         "--non-interactive",
@@ -316,11 +354,7 @@ pub fn execute_update(
     );
     let snapshot = require_success("snapper", snapshot).map_err(ExecutionError::Snapshot)?;
     let snapshot_stdout = snapshot.stdout();
-    let snapshot_number = snapshot_stdout
-        .lines()
-        .rev()
-        .find_map(|line| line.trim().parse::<u64>().ok())
-        .ok_or(ExecutionError::InvalidSnapshot)?;
+    let snapshot_number = parse_snapshot_number(&snapshot_stdout)?;
     state.snapshot_number = Some(snapshot_number);
     save_state(state_root, state).map_err(ExecutionError::Persist)?;
 
@@ -338,8 +372,16 @@ pub fn execute_update(
     apply_args.extend_from_slice(ZYPPER_UPDATE_POLICY);
     let apply = run_observed("zypper", &apply_args, observer);
     let code = apply.status.code();
-    if !matches!(code, Some(0 | 102 | 103)) {
-        return Err(ExecutionError::Apply(failure("zypper", apply)));
+    match classify_apply_exit(code) {
+        Ok(_) => {}
+        Err(ApplyExitError::RestartPackageManager) => {
+            return Err(ExecutionError::PackageManagerRestart(failure(
+                "zypper", apply,
+            )));
+        }
+        Err(ApplyExitError::Failed) => {
+            return Err(ExecutionError::Apply(failure("zypper", apply)));
+        }
     }
 
     let touches_boot = confirmed.solver.changes.iter().any(|change| {
@@ -357,7 +399,7 @@ pub fn execute_update(
     }
 
     let reboot_required = confirmed.solver.reboot_required || code == Some(102) || touches_boot;
-    let package_manager_restart = code == Some(103);
+    let package_manager_restart = false;
     let next = if reboot_required {
         OperationState::AwaitingReboot
     } else {
@@ -371,6 +413,36 @@ pub fn execute_update(
         reboot_required,
         package_manager_restart,
     })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ApplyExit {
+    Completed,
+    RebootRequired,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ApplyExitError {
+    RestartPackageManager,
+    Failed,
+}
+
+fn classify_apply_exit(code: Option<i32>) -> Result<ApplyExit, ApplyExitError> {
+    match code {
+        Some(0) => Ok(ApplyExit::Completed),
+        Some(102) => Ok(ApplyExit::RebootRequired),
+        Some(103) => Err(ApplyExitError::RestartPackageManager),
+        _ => Err(ApplyExitError::Failed),
+    }
+}
+
+fn parse_snapshot_number(stdout: &str) -> Result<u64, ExecutionError> {
+    stdout
+        .lines()
+        .rev()
+        .find_map(|line| line.trim().parse::<u64>().ok())
+        .filter(|number| *number > 0)
+        .ok_or(ExecutionError::InvalidSnapshot)
 }
 
 fn persist(
@@ -480,5 +552,100 @@ trait OutputText {
 impl OutputText for Output {
     fn stdout(&self) -> String {
         String::from_utf8_lossy(&self.stdout).into_owned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classifies_supported_zypper_exit_codes() {
+        assert_eq!(classify_apply_exit(Some(0)), Ok(ApplyExit::Completed));
+        assert_eq!(
+            classify_apply_exit(Some(102)),
+            Ok(ApplyExit::RebootRequired)
+        );
+        assert_eq!(
+            classify_apply_exit(Some(103)),
+            Err(ApplyExitError::RestartPackageManager)
+        );
+        assert_eq!(classify_apply_exit(Some(4)), Err(ApplyExitError::Failed));
+        assert_eq!(classify_apply_exit(None), Err(ApplyExitError::Failed));
+    }
+
+    #[test]
+    fn parses_only_positive_snapper_numbers() {
+        assert_eq!(
+            parse_snapshot_number("Creating snapshot\n42\n").unwrap(),
+            42
+        );
+        assert!(matches!(
+            parse_snapshot_number("snapshot failed\n"),
+            Err(ExecutionError::InvalidSnapshot)
+        ));
+        assert!(matches!(
+            parse_snapshot_number("0\n"),
+            Err(ExecutionError::InvalidSnapshot)
+        ));
+    }
+
+    #[test]
+    fn transaction_lock_rejects_a_concurrent_holder() {
+        let path =
+            std::env::temp_dir().join(format!("lyra-upgrade-lock-test-{}", std::process::id()));
+        let first = TransactionLock::acquire_at(&path).unwrap();
+        assert!(matches!(
+            TransactionLock::acquire_at(&path),
+            Err(ExecutionError::Busy)
+        ));
+        drop(first);
+        let second = TransactionLock::acquire_at(&path).unwrap();
+        drop(second);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn preserves_stable_failure_codes_and_blocking_boundary() {
+        let busy = ExecutionError::Busy;
+        assert_eq!(busy.code(), "TRANSACTION_BUSY");
+        assert!(busy.is_blocking());
+        let invalid_snapshot = ExecutionError::InvalidSnapshot;
+        assert_eq!(invalid_snapshot.code(), "SNAPSHOT_FAILED");
+        assert!(!invalid_snapshot.is_blocking());
+    }
+
+    #[test]
+    fn maps_failures_according_to_the_snapshot_boundary() {
+        let network = ExecutionError::Refresh(CommandFailure {
+            program: "zypper",
+            code: Some(4),
+            stdout: String::new(),
+            stderr: "network unavailable".to_string(),
+        });
+        assert_eq!(failure_state(&network, false), OperationState::Blocked);
+        assert_eq!(
+            failure_state(&ExecutionError::Busy, false),
+            OperationState::Blocked
+        );
+        assert_eq!(
+            failure_state(&ExecutionError::InvalidSnapshot, false),
+            OperationState::Failed
+        );
+
+        let apply = ExecutionError::Apply(CommandFailure {
+            program: "zypper",
+            code: Some(4),
+            stdout: String::new(),
+            stderr: "apply failed".to_string(),
+        });
+        assert_eq!(failure_state(&apply, true), OperationState::NeedsRecovery);
+        let dracut = ExecutionError::Initramfs(CommandFailure {
+            program: "dracut",
+            code: Some(1),
+            stdout: String::new(),
+            stderr: "initramfs failed".to_string(),
+        });
+        assert_eq!(failure_state(&dracut, true), OperationState::NeedsRecovery);
     }
 }
