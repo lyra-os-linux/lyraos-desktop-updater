@@ -21,6 +21,33 @@ fn layout_preview_enabled() -> bool {
     std::env::var_os("LYRA_UPGRADE_LAYOUT_PREVIEW").is_some()
 }
 
+/// The GNOME appearance the desktop is set to, so the window can paint light or
+/// dark instead of being dark-only. Same schema and key that Vega's appearance
+/// module and Lyra Welcome read, so the three never disagree. The stylesheet
+/// falls back to prefers-color-scheme when this returns nothing, which is what
+/// a non-GNOME session or a missing gsettings leaves behind.
+#[tauri::command]
+fn color_scheme() -> String {
+    let output = Command::new("/usr/bin/gsettings")
+        .args(["get", "org.gnome.desktop.interface", "color-scheme"])
+        .stdin(Stdio::null())
+        .output();
+    match output {
+        Ok(result) if result.status.success() => {
+            match String::from_utf8_lossy(&result.stdout)
+                .trim()
+                .trim_matches('\'')
+                .trim_matches('"')
+            {
+                "prefer-dark" => "dark".to_owned(),
+                // "default" means no stated preference, which GNOME renders light.
+                _ => "light".to_owned(),
+            }
+        }
+        _ => "unknown".to_owned(),
+    }
+}
+
 #[tauri::command]
 async fn plan_update(
     request_id: String,
@@ -123,6 +150,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             service_request,
             layout_preview_enabled,
+            color_scheme,
             plan_update,
             reboot_system
         ])

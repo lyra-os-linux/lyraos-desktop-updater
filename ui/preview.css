@@ -3,10 +3,10 @@
   gap: 14px;
   margin: -18px 0 24px;
   padding: 12px 16px;
-  border: 1px solid #e8c76b66;
+  border: 1px solid color-mix(in srgb, var(--gold) 40%, transparent);
   border-radius: 8px;
-  background: #2b2430;
-  color: #dce7f4;
+  background: var(--panel);
+  color: var(--fg);
   font-size: 12px;
 }
 
@@ -15,7 +15,7 @@
 }
 
 .preview-toolbar strong {
-  color: var(--gold);
+  color: var(--accent);
 }
 
 .preview-toolbar label {
@@ -27,19 +27,20 @@
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 8px 10px;
-  background: #0d1b2d;
-  color: #dce7f4;
+  background: var(--field);
+  color: var(--fg);
 }
 
+/* color-scheme lives on :root in styles.css, so native controls and
+   scrollbars follow the chosen appearance instead of being pinned dark. */
 select {
-  color-scheme: dark;
-  color: #dce7f4;
-  background-color: #0d1b2d;
+  color: var(--fg);
+  background-color: var(--field);
 }
 
 select option {
-  color: #edf3fa;
-  background-color: #0d1b2d;
+  color: var(--fg);
+  background-color: var(--field);
 }
 
 @media (max-width: 800px) {

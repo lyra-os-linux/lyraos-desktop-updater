@@ -6,6 +6,10 @@ document.documentElement.lang=locale;
 document.querySelectorAll("[data-i18n]").forEach(node=>node.textContent=t(node.dataset.i18n));
 document.querySelectorAll("[data-i18n-placeholder]").forEach(node=>node.placeholder=t(node.dataset.i18nPlaceholder));
 
+// Paint the window in the desktop's appearance. Failing quietly is correct:
+// styles.css then falls back to prefers-color-scheme.
+invoke("color_scheme").then(scheme=>{ if(scheme==="light"||scheme==="dark") document.documentElement.dataset.scheme=scheme; }).catch(()=>{});
+
 const state={operationId:null,planHash:null,planned:null,events:[],lastSequence:0,tab:"events",poll:null,currentState:"Checking",snapshotNumber:null};
 const persistedOperationKey="lyra-upgrade-active-operation-v1";
 const phases=["Checking","Preflight","Downloading","Snapshotting","Applying","AwaitingReboot","VerifyingBoot","Completed"];

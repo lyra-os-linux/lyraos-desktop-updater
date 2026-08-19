@@ -78,6 +78,20 @@ class UpgradeUiContractTests(unittest.TestCase):
         self.assertLess(app.index('invoke("plan_update"'), app.index('request("Start"'))
         self.assertIn("planned:state.planned", app)
 
+    def test_the_window_follows_the_desktop_appearance(self) -> None:
+        rust = (ROOT / "upgrade/src-tauri/src/main.rs").read_text(encoding="utf-8")
+        app = (ROOT / "upgrade/ui/app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "upgrade/ui/styles.css").read_text(encoding="utf-8")
+        preview = (ROOT / "upgrade/ui/preview.css").read_text(encoding="utf-8")
+        # Same schema and key Vega and Lyra Welcome read.
+        self.assertIn('"org.gnome.desktop.interface", "color-scheme"', rust)
+        self.assertIn('invoke("color_scheme")', app)
+        self.assertIn("document.documentElement.dataset.scheme=scheme", app)
+        self.assertIn(':root[data-scheme="light"]', styles)
+        self.assertIn("@media (prefers-color-scheme: light)", styles)
+        # A pinned dark scheme would leave native controls dark on a light desktop.
+        self.assertNotIn("color-scheme: dark;", preview)
+
     def test_new_interface_keys_exist_in_all_catalogs(self) -> None:
         catalog = (UPGRADE / "ui/i18n.js").read_text(encoding="utf-8")
         for key in (
