@@ -1,4 +1,13 @@
 -------------------------------------------------------------------
+Wed Aug 19 00:00:00 UTC 2026 - Lyra OS Release <rodrigo@w3ti.com.br>
+
+- Follow the desktop light or dark appearance instead of painting the
+  window dark unconditionally, reading the same
+  org.gnome.desktop.interface color-scheme key Vega and Lyra Welcome use.
+- Move color-scheme onto :root so native controls and scrollbars stop
+  being pinned dark on a light session.
+
+-------------------------------------------------------------------
 Mon Aug 18 00:00:00 UTC 2026 - Rodrigo Brito <rodrigo@w3ti.com.br>
 
 - Initial Alpha 6 package with unprivileged planning, typed protocol,
