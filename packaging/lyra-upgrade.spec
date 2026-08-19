@@ -76,6 +76,8 @@ install -Dm0644 packaging/lyra-upgrade-offline.service \
     %{buildroot}%{_unitdir}/lyra-upgrade-offline.service
 install -Dm0644 packaging/lyra-upgrade-verify.service \
     %{buildroot}%{_unitdir}/lyra-upgrade-verify.service
+install -Dm0644 packaging/90-lyra-refresh.conf \
+    %{buildroot}%{_sysconfdir}/zypp/zypp.conf.d/90-lyra-refresh.conf
 install -Dm0644 %{SOURCE3} \
     %{buildroot}%{_datadir}/lyra-upgrade/release-signing-key.gpg
 install -Dm0644 %{SOURCE2} \
@@ -119,6 +121,7 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/org.lyraos.LyraUpgrad
 %dir %{_unitdir}/system-update.target.wants
 %{_unitdir}/system-update.target.wants/lyra-upgrade-offline.service
 %{_unitdir}/multi-user.target.wants/lyra-upgrade-verify.service
+%config(noreplace) %{_sysconfdir}/zypp/zypp.conf.d/90-lyra-refresh.conf
 %dir %{_datadir}/lyra-upgrade
 %{_datadir}/lyra-upgrade/release-signing-key.gpg
 %{_datadir}/lyra-upgrade/build-source.txt

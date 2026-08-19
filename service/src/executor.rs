@@ -131,7 +131,7 @@ pub fn stage_release_upgrade(
     fs::create_dir_all(&packages_dir).map_err(ExecutionError::Stage)?;
     for repository in &manifest.repositories {
         let content = format!(
-            "[{alias}]\nname={alias}\nenabled=1\nautorefresh=0\nbaseurl={url}\ntype=rpm-md\ngpgcheck=1\npriority={priority}\n",
+            "[{alias}]\nname={alias}\nenabled=1\nautorefresh=0\nkeeppackages=0\nbaseurl={url}\ntype=rpm-md\ngpgcheck=1\npriority={priority}\n",
             alias = repository.alias,
             url = repository.base_url,
             priority = repository.priority,

@@ -99,7 +99,7 @@ pub fn plan_release_upgrade(manifest: &ReleaseManifest) -> Result<PlannedUpdate,
     std::fs::create_dir_all(&repos_dir).map_err(PlannerError::Spawn)?;
     for repository in &manifest.repositories {
         let content = format!(
-            "[{alias}]\nname={alias}\nenabled=1\nautorefresh=0\nbaseurl={url}\ntype=rpm-md\ngpgcheck=1\npriority={priority}\n",
+            "[{alias}]\nname={alias}\nenabled=1\nautorefresh=0\nkeeppackages=0\nbaseurl={url}\ntype=rpm-md\ngpgcheck=1\npriority={priority}\n",
             alias = repository.alias,
             url = repository.base_url,
             priority = repository.priority,

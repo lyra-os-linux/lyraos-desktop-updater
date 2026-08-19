@@ -171,7 +171,7 @@ fn install_repository_set(manifest: &ReleaseManifest, operation_id: &str) -> Res
         .map_err(|error| error.to_string())?;
     for repository in &manifest.repositories {
         let content = format!(
-            "[{alias}]\nname={alias}\nenabled=1\nautorefresh=1\nbaseurl={url}\ntype=rpm-md\ngpgcheck=1\npriority={priority}\n",
+            "[{alias}]\nname={alias}\nenabled=1\nautorefresh=1\nkeeppackages=0\nbaseurl={url}\ntype=rpm-md\ngpgcheck=1\npriority={priority}\n",
             alias = repository.alias,
             url = repository.base_url,
             priority = repository.priority,
