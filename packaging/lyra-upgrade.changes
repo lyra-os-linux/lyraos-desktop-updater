@@ -8,6 +8,8 @@ Wed Aug 19 00:00:00 UTC 2026 - Lyra OS Release <rodrigo@w3ti.com.br>
   being pinned dark on a light session.
 - Own the zypp configuration directories created for the refresh policy so
   the RPM passes the final unpackaged-directory check.
+- Normalize Cargo's vendored-source path before archiving so repeated source
+  generation produces identical artifacts outside the temporary build path.
 
 -------------------------------------------------------------------
 Mon Aug 18 00:00:00 UTC 2026 - Rodrigo Brito <rodrigo@w3ti.com.br>
