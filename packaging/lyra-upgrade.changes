@@ -6,6 +6,8 @@ Wed Aug 19 00:00:00 UTC 2026 - Lyra OS Release <rodrigo@w3ti.com.br>
   org.gnome.desktop.interface color-scheme key Vega and Lyra Welcome use.
 - Move color-scheme onto :root so native controls and scrollbars stop
   being pinned dark on a light session.
+- Own the zypp configuration directories created for the refresh policy so
+  the RPM passes the final unpackaged-directory check.
 
 -------------------------------------------------------------------
 Mon Aug 18 00:00:00 UTC 2026 - Rodrigo Brito <rodrigo@w3ti.com.br>

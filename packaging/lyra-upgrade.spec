@@ -121,6 +121,8 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/org.lyraos.LyraUpgrad
 %dir %{_unitdir}/system-update.target.wants
 %{_unitdir}/system-update.target.wants/lyra-upgrade-offline.service
 %{_unitdir}/multi-user.target.wants/lyra-upgrade-verify.service
+%dir %{_sysconfdir}/zypp
+%dir %{_sysconfdir}/zypp/zypp.conf.d
 %config(noreplace) %{_sysconfdir}/zypp/zypp.conf.d/90-lyra-refresh.conf
 %dir %{_datadir}/lyra-upgrade
 %{_datadir}/lyra-upgrade/release-signing-key.gpg

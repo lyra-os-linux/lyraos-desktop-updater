@@ -59,6 +59,15 @@ class UpgradePackagingTests(unittest.TestCase):
         self.assertIn("multi-user.target.wants/lyra-upgrade-verify.service", spec)
         self.assertNotIn("groupadd -r lyra-upgrade", spec)
 
+    def test_zypp_refresh_policy_owns_created_directories(self) -> None:
+        spec = (PACKAGING / "lyra-upgrade.spec").read_text(encoding="utf-8")
+        self.assertIn("%dir %{_sysconfdir}/zypp\n", spec)
+        self.assertIn("%dir %{_sysconfdir}/zypp/zypp.conf.d\n", spec)
+        self.assertIn(
+            "%config(noreplace) %{_sysconfdir}/zypp/zypp.conf.d/90-lyra-refresh.conf",
+            spec,
+        )
+
     def test_runtime_dependencies_cover_fixed_command_allowlist(self) -> None:
         spec = (PACKAGING / "lyra-upgrade.spec").read_text(encoding="utf-8")
         required = {
