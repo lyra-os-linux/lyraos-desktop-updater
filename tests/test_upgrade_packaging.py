@@ -15,6 +15,7 @@ class UpgradePackagingTests(unittest.TestCase):
         contents = script.read_text(encoding="utf-8")
         for invariant in (
             "cargo vendor --locked",
+            "sed -i 's|^directory = .*|directory = \"vendor\"|'",
             "git -C \"$REPO_ROOT\" archive",
             '--mtime="@$SOURCE_EPOCH"',
             "--sort=name",

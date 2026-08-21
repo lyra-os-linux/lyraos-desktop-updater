@@ -8,7 +8,7 @@ UPGRADE_DIR="$(dirname "$SCRIPT_DIR")"
 REPO_ROOT="$(dirname "$UPGRADE_DIR")"
 OUTPUT_DIR="${1:-$SCRIPT_DIR/output}"
 
-for command in cargo git gpg sha256sum tar zstd; do
+for command in cargo git gpg sed sha256sum tar zstd; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "required command not found: $command" >&2
     exit 1
@@ -74,6 +74,10 @@ mkdir -p "$TEMPORARY/vendor-layer/.cargo"
   cargo vendor --locked "$TEMPORARY/vendor-layer/vendor" \
     >"$TEMPORARY/vendor-layer/.cargo/config.toml"
 )
+# cargo vendor prints the absolute destination it received. Keep the archive
+# independent of the random temporary directory used for this run.
+sed -i 's|^directory = .*|directory = "vendor"|' \
+  "$TEMPORARY/vendor-layer/.cargo/config.toml"
 VENDOR_ARCHIVE="$OUTPUT_DIR/vendor.tar.zst"
 make_archive "$TEMPORARY/vendor-layer" . "$VENDOR_ARCHIVE"
 
