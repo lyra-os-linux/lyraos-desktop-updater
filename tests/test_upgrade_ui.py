@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-UPGRADE = ROOT / "upgrade"
+UPGRADE = ROOT
 
 
 class UpgradeUiContractTests(unittest.TestCase):
@@ -79,10 +79,10 @@ class UpgradeUiContractTests(unittest.TestCase):
         self.assertIn("planned:state.planned", app)
 
     def test_the_window_follows_the_desktop_appearance(self) -> None:
-        rust = (ROOT / "upgrade/src-tauri/src/main.rs").read_text(encoding="utf-8")
-        app = (ROOT / "upgrade/ui/app.js").read_text(encoding="utf-8")
-        styles = (ROOT / "upgrade/ui/styles.css").read_text(encoding="utf-8")
-        preview = (ROOT / "upgrade/ui/preview.css").read_text(encoding="utf-8")
+        rust = (ROOT / "src-tauri/src/main.rs").read_text(encoding="utf-8")
+        app = (ROOT / "ui/app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "ui/styles.css").read_text(encoding="utf-8")
+        preview = (ROOT / "ui/preview.css").read_text(encoding="utf-8")
         # Same schema and key Vega and Lyra Welcome read.
         self.assertIn('"org.gnome.desktop.interface", "color-scheme"', rust)
         self.assertIn('invoke("color_scheme")', app)

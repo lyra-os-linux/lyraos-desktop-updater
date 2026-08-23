@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGING = ROOT / "upgrade" / "packaging"
+PACKAGING = ROOT / "packaging"
 
 
 class UpgradePackagingTests(unittest.TestCase):
@@ -37,7 +37,7 @@ class UpgradePackagingTests(unittest.TestCase):
         self.assertIn("cargo test --offline --workspace", spec)
 
     def test_tauri_and_desktop_icons_are_packaged(self) -> None:
-        icons = ROOT / "upgrade" / "src-tauri" / "icons"
+        icons = ROOT / "src-tauri" / "icons"
         for name in ("icon.png", "32x32.png", "128x128.png", "256x256.png", "512x512.png"):
             path = icons / name
             self.assertTrue(path.is_file(), name)

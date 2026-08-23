@@ -2,8 +2,8 @@
 
 Workspace Rust do mecanismo de atualização recuperável do Lyra OS Desktop.
 Os contratos normativos estão em
-[`docs/lyra-upgrade-architecture.md`](../docs/lyra-upgrade-architecture.md) e
-[`docs/lyra-upgrade-state-machine.md`](../docs/lyra-upgrade-state-machine.md).
+[`docs/lyra-upgrade-architecture.md`](docs/lyra-upgrade-architecture.md) e
+[`docs/lyra-upgrade-state-machine.md`](docs/lyra-upgrade-state-machine.md).
 
 - `core`: descoberta somente leitura, preflight, domínio, transições,
   planejamento determinístico e persistência atômica;
@@ -21,7 +21,7 @@ Os contratos normativos estão em
 Execute os testes com:
 
 ```sh
-cargo test --manifest-path upgrade/Cargo.toml --workspace
+cargo test --workspace
 ```
 
 O pacote OBS de staging inclui unidades systemd para a transação offline e a

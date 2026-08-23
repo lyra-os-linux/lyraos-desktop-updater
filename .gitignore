@@ -1,0 +1,19 @@
+# RPM build artifacts
+*.rpm
+*.src.rpm
+/packaging/output/
+
+# Rust build output
+target/
+
+# cargo vendor output (regenerated for OBS packaging, see
+# packaging/lyra-upgrade.spec - not meant to be committed)
+vendor/
+
+# Python bytecode cache
+__pycache__/
+*.pyc
+
+# Logs and temp files
+*.log
+.DS_Store

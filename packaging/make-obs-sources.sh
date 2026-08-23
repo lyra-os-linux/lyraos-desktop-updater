@@ -4,8 +4,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-UPGRADE_DIR="$(dirname "$SCRIPT_DIR")"
-REPO_ROOT="$(dirname "$UPGRADE_DIR")"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 OUTPUT_DIR="${1:-$SCRIPT_DIR/output}"
 
 for command in cargo git gpg sed sha256sum tar zstd; do
@@ -20,7 +19,7 @@ if [ -n "$(git -C "$REPO_ROOT" status --porcelain --untracked-files=normal)" ]; 
   exit 1
 fi
 
-VERSION="$(awk -F '"' '/^version = / { print $2; exit }' "$UPGRADE_DIR/Cargo.toml")"
+VERSION="$(awk -F '"' '/^version = / { print $2; exit }' "$REPO_ROOT/Cargo.toml")"
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "could not read the lyra-upgrade semantic version" >&2
   exit 1
@@ -40,7 +39,7 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$OUTPUT_DIR" "$TEMPORARY/source/$PREFIX" "$TEMPORARY/vendor-layer"
-git -C "$REPO_ROOT" archive --format=tar "$COMMIT:upgrade" |
+git -C "$REPO_ROOT" archive --format=tar "$COMMIT" |
   tar -xf - -C "$TEMPORARY/source/$PREFIX"
 git -C "$REPO_ROOT" show "$COMMIT:LICENSE" >"$TEMPORARY/source/$PREFIX/LICENSE"
 
@@ -81,7 +80,7 @@ sed -i 's|^directory = .*|directory = "vendor"|' \
 VENDOR_ARCHIVE="$OUTPUT_DIR/vendor.tar.zst"
 make_archive "$TEMPORARY/vendor-layer" . "$VENDOR_ARCHIVE"
 
-LOCK_SHA256="$(sha256sum "$UPGRADE_DIR/Cargo.lock" | awk '{print $1}')"
+LOCK_SHA256="$(sha256sum "$REPO_ROOT/Cargo.lock" | awk '{print $1}')"
 cat >"$OUTPUT_DIR/build-source.txt.new" <<EOF
 commit=$COMMIT
 source_epoch=$SOURCE_EPOCH
