@@ -6,6 +6,13 @@ Mon Aug 24 00:00:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
 - Add CI coverage for the packaging and UI contracts.
 
 -------------------------------------------------------------------
+Mon Aug 24 2026 - Rodrigo Brito <rodrigo@lyraos.com.br>
+
+- Update repository references from britors to lyra-os-linux (systemd
+  unit Documentation=, polkit vendor_url, spec URL, Cargo.toml
+  repository; no functional change, source-only rebuild of 0.2.0).
+
+-------------------------------------------------------------------
 Wed Aug 19 00:00:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
 
 - Follow the desktop light or dark appearance instead of painting the
