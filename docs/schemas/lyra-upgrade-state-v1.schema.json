@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lyraos.com.br/schemas/lyra-upgrade-state-v1.schema.json",
+  "title": "Lyra Upgrade persistent state v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "operation_id", "sequence", "operation", "state", "source", "plan_sha256", "created_at", "updated_at"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "operation_id": {"type": "string", "format": "uuid"},
+    "sequence": {"type": "integer", "minimum": 0},
+    "operation": {"enum": ["UpdateWithinRelease", "ReleaseUpgrade"]},
+    "state": {
+      "enum": ["Idle", "Checking", "Available", "Preflight", "Planned", "AwaitingConfirmation", "Downloading", "Snapshotting", "Applying", "ReadyToReboot", "ApplyingOffline", "AwaitingReboot", "VerifyingBoot", "Blocked", "Failed", "NeedsRecovery", "Completed"]
+    },
+    "source": {"$ref": "#/$defs/release"},
+    "target": {"$ref": "#/$defs/release"},
+    "plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "snapshot_number": {"type": "integer", "minimum": 0},
+    "last_completed_step": {"type": "string", "maxLength": 128},
+    "error_code": {"type": "string", "pattern": "^[A-Z0-9_]+$"},
+    "boot_verification": {"enum": ["Pending", "Passed", "Failed"]},
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "edition", "architecture", "build_id"],
+      "properties": {
+        "version": {"type": "string", "minLength": 1, "maxLength": 64},
+        "edition": {"const": "desktop"},
+        "architecture": {"const": "x86_64"},
+        "build_id": {"type": "string", "minLength": 1, "maxLength": 128}
+      }
+    }
+  }
+}

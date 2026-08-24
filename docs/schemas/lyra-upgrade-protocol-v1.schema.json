@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lyraos.com.br/schemas/lyra-upgrade-protocol-v1.schema.json",
+  "title": "Lyra Upgrade protocol v1 request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version", "request_id", "kind"],
+  "properties": {
+    "protocol_version": {"const": 1},
+    "request_id": {"type": "string", "format": "uuid"},
+    "kind": {
+      "enum": ["Inspect", "PlanUpdate", "PlanReleaseUpgrade", "Start", "Status", "Cancel", "AcknowledgeRecovery"]
+    },
+    "operation_id": {"type": "string", "format": "uuid"},
+    "plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "after_sequence": {"type": "integer", "minimum": 0},
+    "confirmed": {"type": "boolean"},
+    "recovery_action": {"enum": ["ShowDiagnostics", "Rollback", "KeepCurrent"]}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"kind": {"const": "Start"}}, "required": ["kind"]},
+      "then": {"required": ["operation_id", "plan_sha256", "confirmed"]}
+    },
+    {
+      "if": {"properties": {"kind": {"enum": ["Status", "Cancel"]}}, "required": ["kind"]},
+      "then": {"required": ["operation_id"]}
+    },
+    {
+      "if": {"properties": {"kind": {"const": "AcknowledgeRecovery"}}, "required": ["kind"]},
+      "then": {"required": ["operation_id", "recovery_action"]}
+    }
+  ]
+}
