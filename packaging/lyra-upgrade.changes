@@ -1,4 +1,11 @@
 -------------------------------------------------------------------
+Mon Aug 24 00:00:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
+
+- Make the trust-boundary ADR and the versioned solver, protocol and state
+  schemas canonical in the standalone Lyra Upgrade source repository.
+- Add CI coverage for the packaging and UI contracts.
+
+-------------------------------------------------------------------
 Wed Aug 19 00:00:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
 
 - Follow the desktop light or dark appearance instead of painting the
