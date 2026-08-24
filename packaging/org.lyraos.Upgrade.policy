@@ -3,7 +3,7 @@
         "https://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
 <policyconfig>
   <vendor>Lyra OS</vendor>
-  <vendor_url>https://github.com/britors/Lyra</vendor_url>
+  <vendor_url>https://github.com/lyra-os-linux/lyraos-desktop-updater</vendor_url>
   <action id="org.lyraos.Upgrade.manage">
     <description>Manage Lyra OS updates</description>
     <description xml:lang="pt_BR">Gerenciar atualizações do Lyra OS</description>

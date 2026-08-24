@@ -11,7 +11,7 @@ Release:        0
 Summary:        Atualização recuperável do Lyra OS Desktop
 License:        GPL-3.0-only
 Group:          System/Packages
-URL:            https://github.com/britors/Lyra
+URL:            https://github.com/lyra-os-linux/lyraos-desktop-updater
 Source0:        %{name}-%{version}.tar.zst
 Source1:        vendor.tar.zst
 Source2:        build-source.txt

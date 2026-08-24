@@ -1,6 +1,6 @@
 [Unit]
 Description=Verify the last Lyra OS update after boot
-Documentation=https://github.com/britors/Lyra
+Documentation=https://github.com/lyra-os-linux/lyraos-desktop-updater
 After=multi-user.target network-online.target
 Wants=network-online.target
 ConditionPathExists=/var/lib/lyra-upgrade/operations

@@ -1,6 +1,6 @@
 [Unit]
 Description=Apply a staged Lyra OS release upgrade
-Documentation=https://github.com/britors/Lyra
+Documentation=https://github.com/lyra-os-linux/lyraos-desktop-updater
 DefaultDependencies=no
 ConditionPathIsSymbolicLink=/system-update
 After=local-fs.target
