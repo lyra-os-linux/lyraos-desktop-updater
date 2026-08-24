@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lyraos.com.br/schemas/lyra-upgrade-solver-v1.schema.json",
+  "title": "Lyra Upgrade solver result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "successful",
+    "problems",
+    "metadata_valid_repositories",
+    "changes",
+    "download_bytes",
+    "transaction_size_increase",
+    "estimated_snapshot_bytes",
+    "reboot_required"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "successful": {"type": "boolean"},
+    "problems": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1, "maxLength": 512}
+    },
+    "metadata_valid_repositories": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[A-Za-z0-9._:-]+$"}
+    },
+    "changes": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/package_change"}
+    },
+    "download_bytes": {"type": "integer", "minimum": 0},
+    "transaction_size_increase": {"type": "integer", "minimum": 0},
+    "estimated_snapshot_bytes": {"type": "integer", "minimum": 0},
+    "reboot_required": {"type": "boolean"}
+  },
+  "$defs": {
+    "nullable_string": {"type": ["string", "null"], "maxLength": 512},
+    "package_change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "architecture",
+        "action",
+        "current_version",
+        "proposed_version",
+        "current_vendor",
+        "proposed_vendor",
+        "repository_alias",
+        "download_bytes",
+        "installed_size_before",
+        "installed_size_after"
+      ],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[A-Za-z0-9+._-]+$"},
+        "architecture": {"type": "string", "pattern": "^[A-Za-z0-9_]+$"},
+        "action": {"enum": ["Install", "Upgrade", "Downgrade", "Remove", "Reinstall"]},
+        "current_version": {"$ref": "#/$defs/nullable_string"},
+        "proposed_version": {"$ref": "#/$defs/nullable_string"},
+        "current_vendor": {"$ref": "#/$defs/nullable_string"},
+        "proposed_vendor": {"$ref": "#/$defs/nullable_string"},
+        "repository_alias": {"$ref": "#/$defs/nullable_string"},
+        "download_bytes": {"type": "integer", "minimum": 0},
+        "installed_size_before": {"type": "integer", "minimum": 0},
+        "installed_size_after": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}
