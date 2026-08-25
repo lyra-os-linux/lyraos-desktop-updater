@@ -139,7 +139,7 @@ mod tests {
     fn facts() -> HostFacts {
         HostFacts {
             release: ReleaseIdentity {
-                version: "2026.08-alpha6".into(),
+                version: "27.02-alpha6".into(),
                 edition: "desktop".into(),
                 architecture: "x86_64".into(),
                 build_id: "fixture".into(),

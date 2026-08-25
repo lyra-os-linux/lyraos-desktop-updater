@@ -223,7 +223,7 @@ mod tests {
             operation: OperationKind::UpdateWithinRelease,
             state: OperationState::Planned,
             source: ReleaseIdentity {
-                version: "2026.08-alpha6".into(),
+                version: "27.02-alpha6".into(),
                 edition: "desktop".into(),
                 architecture: "x86_64".into(),
                 build_id: "fixture".into(),

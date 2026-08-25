@@ -7,9 +7,9 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 pub const RELEASE_MANIFEST_URL: &str =
-    "https://downloads.sourceforge.net/project/lyra/releases/1.0/desktop/releases-v1.json";
+    "https://downloads.sourceforge.net/project/lyra/releases/27.02/desktop/releases-v1.json";
 pub const RELEASE_MANIFEST_SIGNATURE_URL: &str =
-    "https://downloads.sourceforge.net/project/lyra/releases/1.0/desktop/releases-v1.json.asc";
+    "https://downloads.sourceforge.net/project/lyra/releases/27.02/desktop/releases-v1.json.asc";
 pub const RELEASE_KEYRING: &str = "/usr/share/lyra-upgrade/release-signing-key.gpg";
 const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
 

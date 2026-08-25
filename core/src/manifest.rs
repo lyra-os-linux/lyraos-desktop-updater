@@ -176,7 +176,7 @@ mod tests {
             status: ManifestStatus::Available,
             valid_from: "2027-01-01T00:00:00Z".into(),
             valid_until: "2027-12-31T00:00:00Z".into(),
-            source: identity("2026.08"),
+            source: identity("27.02"),
             target: identity("2027.04"),
             minimum_updater_version: "0.1.0".into(),
             repositories: vec![RepositoryTransition {
@@ -194,13 +194,13 @@ mod tests {
     #[test]
     fn rejects_replay_and_unsigned_style_urls() {
         assert_eq!(
-            validate_manifest_route(&manifest(), &identity("2026.08"), Some(8)),
+            validate_manifest_route(&manifest(), &identity("27.02"), Some(8)),
             Err(ManifestError::Replay)
         );
         let mut invalid = manifest();
         invalid.repositories[0].base_url = "https://user:pass@example.test/repo?x=1".into();
         assert_eq!(
-            validate_manifest_route(&invalid, &identity("2026.08"), None),
+            validate_manifest_route(&invalid, &identity("27.02"), None),
             Err(ManifestError::InvalidRepository)
         );
     }

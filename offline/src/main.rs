@@ -282,3 +282,49 @@ fn mark_recovery() {
     }
     let _ = remove_system_update_marker();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::read_json;
+    use std::fs;
+    use std::os::unix::fs::symlink;
+    use std::path::PathBuf;
+
+    fn temporary(name: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "lyra-upgrade-offline-{name}-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn persisted_json_must_be_regular_bounded_and_complete() {
+        let root = temporary("json");
+        let valid = root.join("valid.json");
+        fs::write(&valid, br#"{"sequence":7}"#).unwrap();
+        let value: serde_json::Value = read_json(&valid).unwrap();
+        assert_eq!(value["sequence"], 7);
+
+        let malformed = root.join("malformed.json");
+        fs::write(&malformed, b"{").unwrap();
+        assert!(read_json::<serde_json::Value>(&malformed).is_err());
+
+        let link = root.join("link.json");
+        symlink(&valid, &link).unwrap();
+        assert_eq!(
+            read_json::<serde_json::Value>(&link).unwrap_err(),
+            "refusing symbolic-link state"
+        );
+
+        let oversized = root.join("oversized.json");
+        fs::write(&oversized, vec![b' '; 4 * 1024 * 1024 + 1]).unwrap();
+        assert_eq!(
+            read_json::<serde_json::Value>(&oversized).unwrap_err(),
+            "state file is too large"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+}

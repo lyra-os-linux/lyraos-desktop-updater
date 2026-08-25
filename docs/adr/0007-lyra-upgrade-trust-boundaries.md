@@ -91,7 +91,7 @@ snapshot e resulta em `NeedsRecovery`; rollback não é disparado silenciosament
 após um boot funcional.
 
 O escopo inicial é exclusivamente Lyra OS Desktop com raiz Btrfs, Snapper e
-boot UEFI suportado. Lyra OS Server 1.0 em ext4 é recusado.
+boot UEFI suportado. Lyra OS Server 27.02 em ext4 é recusado.
 
 ### Logs
 

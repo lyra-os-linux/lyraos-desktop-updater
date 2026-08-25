@@ -433,7 +433,7 @@ mod tests {
         };
         fixture.files.insert(
             "/usr/lib/lyra-os/release".into(),
-            "LYRA_ARCHITECTURE='x86_64'\nLYRA_VERSION_ID='2026.08-alpha6'\n".into(),
+            "LYRA_ARCHITECTURE='x86_64'\nLYRA_VERSION_ID='27.02-alpha6'\n".into(),
         );
         fixture
             .directories
@@ -470,7 +470,7 @@ mod tests {
     #[test]
     fn discovers_supported_host_without_network_or_mutation() {
         let facts = discover_host(&fixture()).unwrap();
-        assert_eq!(facts.release.version, "2026.08-alpha6");
+        assert_eq!(facts.release.version, "27.02-alpha6");
         assert_eq!(facts.root_filesystem, "btrfs");
         assert!(facts.snapper_root_configured);
         assert_eq!(facts.secure_boot_enabled, Some(true));

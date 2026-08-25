@@ -120,3 +120,30 @@ fn write_sequence(sequence: u64) -> std::io::Result<()> {
     file.sync_all()?;
     fs::rename(temporary, path)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::read_manifest_sequence;
+    use std::fs;
+
+    #[test]
+    fn manifest_sequence_rejects_missing_incomplete_and_invalid_values() {
+        let root = std::env::temp_dir().join(format!(
+            "lyra-upgrade-verifier-sequence-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir(&root).unwrap();
+
+        fs::write(root.join("manifest.json"), br#"{"sequence":42}"#).unwrap();
+        assert_eq!(read_manifest_sequence(&root), Some(42));
+        fs::write(root.join("manifest.json"), br#"{"target":"x"}"#).unwrap();
+        assert_eq!(read_manifest_sequence(&root), None);
+        fs::write(root.join("manifest.json"), br#"{"sequence":}"#).unwrap();
+        assert_eq!(read_manifest_sequence(&root), None);
+        fs::write(root.join("manifest.json"), br#"{"sequence":"tampered"}"#).unwrap();
+        assert_eq!(read_manifest_sequence(&root), None);
+
+        fs::remove_dir_all(root).unwrap();
+    }
+}
