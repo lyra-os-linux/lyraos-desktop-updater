@@ -123,7 +123,33 @@ fn prepare_root(root: &Path) -> Result<(), PersistenceError> {
         return Err(PersistenceError::UnsafePath);
     }
     reject_symlink(root)?;
+    if let Some(parent) = root.parent() {
+        ensure_parent_chain(parent)?;
+    }
     ensure_directory(root)
+}
+
+fn ensure_parent_chain(path: &Path) -> Result<(), PersistenceError> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+            Err(PersistenceError::UnsafePath)
+        }
+        Ok(metadata)
+            if metadata.uid() != unsafe { libc::geteuid() }
+                && metadata.mode() & libc::S_ISVTX == 0 =>
+        {
+            Err(PersistenceError::UnsafePath)
+        }
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            let parent = path.parent().ok_or(PersistenceError::UnsafePath)?;
+            ensure_parent_chain(parent)?;
+            fs::create_dir(path)?;
+            fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+            Ok(())
+        }
+        Err(error) => Err(PersistenceError::Io(error)),
+    }
 }
 
 fn ensure_directory(path: &Path) -> Result<(), PersistenceError> {
@@ -252,6 +278,16 @@ mod tests {
             & 0o777;
         assert_eq!(mode, 0o600);
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn creates_missing_state_root_parents_on_first_run() {
+        let base = temporary_root("first-run");
+        let root = base.join("lyra-upgrade").join("operations");
+        save_state(&root, &state()).unwrap();
+        assert_eq!(load_state(&root, &state().operation_id).unwrap(), state());
+        assert!(root.is_dir());
+        fs::remove_dir_all(base).unwrap();
     }
 
     #[test]

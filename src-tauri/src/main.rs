@@ -4,9 +4,6 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
 
-use lyra_upgrade_protocol::Response;
-use lyra_upgrade_service::planner::plan_update_with_cached_metadata;
-
 struct ServiceProcess {
     child: Child,
     stdin: ChildStdin,
@@ -46,26 +43,6 @@ fn color_scheme() -> String {
         }
         _ => "unknown".to_owned(),
     }
-}
-
-#[tauri::command]
-async fn plan_update(
-    request_id: String,
-    operation_id: String,
-) -> Result<serde_json::Value, String> {
-    let planned = tauri::async_runtime::spawn_blocking(plan_update_with_cached_metadata)
-        .await
-        .map_err(|_| "PREFLIGHT_BLOCKED".to_string())?
-        .map_err(|_| "PREFLIGHT_BLOCKED".to_string())?;
-    serde_json::to_value(Response::Plan {
-        request_id,
-        operation_id,
-        plan_sha256: planned.plan_sha256.clone(),
-        plan: Box::new(planned.plan.clone()),
-        preflight: planned.preflight.clone(),
-        planned: Box::new(planned),
-    })
-    .map_err(|_| "PLAN_SERIALIZATION_FAILED".to_string())
 }
 
 #[tauri::command]
@@ -151,7 +128,6 @@ fn main() {
             service_request,
             layout_preview_enabled,
             color_scheme,
-            plan_update,
             reboot_system
         ])
         .run(tauri::generate_context!())
