@@ -1,4 +1,11 @@
 -------------------------------------------------------------------
+Wed Aug 26 00:00:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
+
+- Run update planning through the authorized service because zypper requires
+  root privileges even for update --dry-run on Leap.
+- Create the protected operation-state hierarchy automatically on first run.
+
+-------------------------------------------------------------------
 Mon Aug 24 00:00:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
 
 - Make the trust-boundary ADR and the versioned solver, protocol and state
