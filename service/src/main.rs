@@ -229,10 +229,19 @@ impl Service {
         if !confirmed {
             return rejected(request_id, "CONFIRMATION_REQUIRED");
         }
+        let operation_shape_valid = valid_operation_shape(
+            submitted.plan.operation,
+            submitted.manifest.is_some(),
+            submitted
+                .manifest
+                .as_ref()
+                .is_some_and(|manifest| submitted.plan.target.as_ref() == Some(&manifest.target)),
+            submitted.plan.target.is_some(),
+            submitted.plan.manifest_sha256.is_some(),
+        );
         if submitted.plan_sha256 != plan_sha256
             || submitted.plan.sha256().ok().as_deref() != Some(&plan_sha256)
-            || submitted.plan.operation != OperationKind::UpdateWithinRelease
-            || submitted.manifest.is_some()
+            || !operation_shape_valid
             || submitted.facts.release != submitted.plan.source
             || submitted.solver.changes != submitted.plan.package_changes
             || submitted.solver.reboot_required != submitted.plan.reboot_required
@@ -240,6 +249,13 @@ impl Service {
             return rejected(request_id, "PLAN_HASH_MISMATCH");
         }
         if !operation_owned_by(&self.state_root, &operation_id, self.caller_uid) {
+            // A first PlanUpdate may be produced by the unprivileged client and
+            // submitted to a fresh privileged process. Release upgrades never
+            // use this fallback: their signed manifest and pending plan must
+            // already have been persisted by PlanReleaseUpgrade.
+            if submitted.plan.operation != OperationKind::UpdateWithinRelease {
+                return rejected(request_id, "OPERATION_NOT_FOUND");
+            }
             if std::fs::symlink_metadata(self.state_root.join(&operation_id)).is_ok() {
                 return rejected(request_id, "OPERATION_NOT_FOUND");
             }
@@ -281,7 +297,10 @@ impl Service {
         let Some(planned) = planned else {
             return rejected(request_id, "PLAN_NOT_AVAILABLE");
         };
-        if planned.planned.plan_sha256 != plan_sha256 {
+        if planned.planned.plan_sha256 != plan_sha256
+            || planned.planned != submitted
+            || planned.manifest != submitted.manifest
+        {
             return rejected(request_id, "PLAN_HASH_MISMATCH");
         }
         let mut state = match load_state(&self.state_root, &operation_id) {
@@ -450,6 +469,21 @@ impl Service {
             return rejected(request_id, "STATE_WRITE_FAILED");
         }
         self.status(request_id, operation_id, 0)
+    }
+}
+
+fn valid_operation_shape(
+    operation: OperationKind,
+    has_manifest: bool,
+    target_matches_manifest: bool,
+    has_target: bool,
+    has_manifest_sha256: bool,
+) -> bool {
+    match operation {
+        OperationKind::UpdateWithinRelease => !has_manifest && !has_target && !has_manifest_sha256,
+        OperationKind::ReleaseUpgrade => {
+            has_manifest && target_matches_manifest && has_target && has_manifest_sha256
+        }
     }
 }
 
@@ -668,7 +702,47 @@ fn main() {
 
 #[cfg(test)]
 mod ownership_tests {
-    use super::{operation_owned_by, save_operation_owner};
+    use super::{operation_owned_by, save_operation_owner, valid_operation_shape};
+    use lyra_upgrade_core::OperationKind;
+
+    #[test]
+    fn start_accepts_only_complete_shapes_for_update_and_release_upgrade() {
+        assert!(valid_operation_shape(
+            OperationKind::UpdateWithinRelease,
+            false,
+            false,
+            false,
+            false,
+        ));
+        assert!(valid_operation_shape(
+            OperationKind::ReleaseUpgrade,
+            true,
+            true,
+            true,
+            true,
+        ));
+        assert!(!valid_operation_shape(
+            OperationKind::ReleaseUpgrade,
+            false,
+            false,
+            true,
+            true,
+        ));
+        assert!(!valid_operation_shape(
+            OperationKind::ReleaseUpgrade,
+            true,
+            false,
+            true,
+            true,
+        ));
+        assert!(!valid_operation_shape(
+            OperationKind::UpdateWithinRelease,
+            true,
+            true,
+            true,
+            true,
+        ));
+    }
 
     #[test]
     fn operation_owner_is_required_and_cannot_be_replaced() {
