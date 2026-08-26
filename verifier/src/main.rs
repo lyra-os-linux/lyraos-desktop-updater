@@ -92,18 +92,13 @@ fn run(program: &str, arguments: &[&str]) -> bool {
 }
 
 fn read_manifest_sequence(operation_dir: &Path) -> Option<u64> {
-    let contents = fs::read(operation_dir.join("manifest.json")).ok()?;
-    let marker = b"\"sequence\"";
-    let start = contents
-        .windows(marker.len())
-        .position(|window| window == marker)?
-        + marker.len();
-    let tail = std::str::from_utf8(&contents[start..]).ok()?;
-    tail.trim_start_matches(|character: char| character.is_whitespace() || character == ':')
-        .split(|character: char| !character.is_ascii_digit())
-        .next()?
-        .parse()
-        .ok()
+    let path = operation_dir.join("manifest.json");
+    let metadata = fs::symlink_metadata(&path).ok()?;
+    if !metadata.file_type().is_file() || metadata.len() > 1024 * 1024 {
+        return None;
+    }
+    let document: serde_json::Value = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
+    document.get("sequence")?.as_u64()
 }
 
 fn write_sequence(sequence: u64) -> std::io::Result<()> {
@@ -142,6 +137,18 @@ mod tests {
         fs::write(root.join("manifest.json"), br#"{"sequence":}"#).unwrap();
         assert_eq!(read_manifest_sequence(&root), None);
         fs::write(root.join("manifest.json"), br#"{"sequence":"tampered"}"#).unwrap();
+        assert_eq!(read_manifest_sequence(&root), None);
+        fs::write(
+            root.join("manifest.json"),
+            br#"{"note":"embedded \\"sequence\\":99 must not count"}"#,
+        )
+        .unwrap();
+        assert_eq!(read_manifest_sequence(&root), None);
+
+        let target = root.join("target.json");
+        fs::write(&target, br#"{"sequence":43}"#).unwrap();
+        fs::remove_file(root.join("manifest.json")).unwrap();
+        std::os::unix::fs::symlink(&target, root.join("manifest.json")).unwrap();
         assert_eq!(read_manifest_sequence(&root), None);
 
         fs::remove_dir_all(root).unwrap();

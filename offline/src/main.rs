@@ -28,9 +28,7 @@ fn run() -> Result<(), String> {
         .ok_or("invalid operation id")?;
     let mut state = load_state(Path::new(STATE_ROOT), operation_id)
         .map_err(|_| "cannot load operation state")?;
-    if state.state != OperationState::ReadyToReboot || state.snapshot_number.is_none() {
-        return Err("operation is not ready for offline application".into());
-    }
+    prepare_offline_state(&mut state)?;
     let manifest: ReleaseManifest = read_json(&operation_dir.join("manifest.json"))?;
     let confirmed_plan: UpgradePlan = read_json(&operation_dir.join("plan.json"))?;
     if confirmed_plan.sha256().map_err(|_| "cannot hash plan")? != state.plan_sha256 {
@@ -44,9 +42,6 @@ fn run() -> Result<(), String> {
         return Err("persisted manifest hash mismatch".into());
     }
 
-    state
-        .transition_to(OperationState::ApplyingOffline)
-        .map_err(|_| "invalid offline transition")?;
     save_state(Path::new(STATE_ROOT), &state).map_err(|_| "cannot persist offline state")?;
     install_repository_set(&manifest, operation_id)?;
     revalidate_plan(
@@ -95,6 +90,17 @@ fn run() -> Result<(), String> {
     save_state(Path::new(STATE_ROOT), &state).map_err(|_| "cannot persist result")?;
     remove_system_update_marker()?;
     Ok(())
+}
+
+fn prepare_offline_state(
+    state: &mut lyra_upgrade_core::OperationStateRecord,
+) -> Result<(), String> {
+    if state.state != OperationState::ReadyToReboot || state.snapshot_number.is_none() {
+        return Err("operation is not ready for offline application".into());
+    }
+    state
+        .transition_to(OperationState::ApplyingOffline)
+        .map_err(|_| "invalid offline transition".to_string())
 }
 
 fn revalidate_plan(
@@ -285,7 +291,10 @@ fn mark_recovery() {
 
 #[cfg(test)]
 mod tests {
-    use super::read_json;
+    use super::{prepare_offline_state, read_json, require_success, synthetic_output};
+    use lyra_upgrade_core::{
+        BootVerification, OperationKind, OperationState, OperationStateRecord, ReleaseIdentity,
+    };
     use std::fs;
     use std::os::unix::fs::symlink;
     use std::path::PathBuf;
@@ -298,6 +307,60 @@ mod tests {
         let _ = fs::remove_dir_all(&path);
         fs::create_dir(&path).unwrap();
         path
+    }
+
+    fn state(state: OperationState, snapshot_number: Option<u64>) -> OperationStateRecord {
+        OperationStateRecord {
+            schema_version: 1,
+            operation_id: "00000000-0000-4000-8000-000000000001".into(),
+            sequence: 1,
+            operation: OperationKind::ReleaseUpgrade,
+            state,
+            source: ReleaseIdentity {
+                version: "27.02".into(),
+                edition: "desktop".into(),
+                architecture: "x86_64".into(),
+                build_id: "baseline".into(),
+            },
+            target: Some(ReleaseIdentity {
+                version: "27.10".into(),
+                edition: "desktop".into(),
+                architecture: "x86_64".into(),
+                build_id: "candidate".into(),
+            }),
+            plan_sha256: "a".repeat(64),
+            manifest_sha256: Some("b".repeat(64)),
+            snapshot_number,
+            last_completed_step: Some("downloaded".into()),
+            error_code: None,
+            boot_verification: Some(BootVerification::Pending),
+            created_at: "2026-08-26T12:00:00Z".into(),
+            updated_at: "2026-08-26T12:00:00Z".into(),
+        }
+    }
+
+    #[test]
+    fn offline_preparation_requires_snapshot_and_is_not_reentrant() {
+        let mut ready = state(OperationState::ReadyToReboot, Some(7));
+        prepare_offline_state(&mut ready).unwrap();
+        assert_eq!(ready.state, OperationState::ApplyingOffline);
+        assert_eq!(
+            prepare_offline_state(&mut ready).unwrap_err(),
+            "operation is not ready for offline application"
+        );
+
+        let mut missing_snapshot = state(OperationState::ReadyToReboot, None);
+        assert_eq!(
+            prepare_offline_state(&mut missing_snapshot).unwrap_err(),
+            "operation is not ready for offline application"
+        );
+    }
+
+    #[test]
+    fn command_failures_keep_stable_program_and_message() {
+        let error =
+            require_success(synthetic_output("partial write".into()), "dracut").unwrap_err();
+        assert_eq!(error, "dracut failed: partial write");
     }
 
     #[test]
