@@ -202,7 +202,7 @@ mod tests {
             operation: kind,
             state,
             source: ReleaseIdentity {
-                version: "27.02-alpha6".into(),
+                version: "1.0-alpha.6".into(),
                 edition: "desktop".into(),
                 architecture: "x86_64".into(),
                 build_id: "test".into(),

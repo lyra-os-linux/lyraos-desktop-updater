@@ -114,7 +114,7 @@ não repetíveis transitam para `NeedsRecovery` quando o resultado é ambíguo.
 - somente Desktop `x86_64`, Btrfs/Snapper e releases declaradas são aceitos;
 - update dentro da release não consulta nem altera rota de upgrade;
 - schema desconhecido falha fechado e preserva estado/snapshot;
-- a versão 27.02 deve entender o manifesto sucessor sem precisar atualizar antes
+- a versão 1.0 deve entender o manifesto sucessor sem precisar atualizar antes
   o próprio Lyra Upgrade;
 - remoção do pacote desativa suas unidades, mas nunca remove snapshots ou
   estado de recuperação automaticamente.

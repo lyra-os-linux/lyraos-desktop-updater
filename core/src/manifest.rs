@@ -97,7 +97,7 @@ pub fn validate_manifest_route(
     if manifest.target.edition != "desktop" || manifest.target.architecture != "x86_64" {
         return Err(ManifestError::UnsupportedTarget);
     }
-    if manifest.target.version == installed.version {
+    if !valid_version_transition(&installed.version, &manifest.target.version) {
         return Err(ManifestError::TargetNotNewer);
     }
     if last_sequence.is_some_and(|sequence| manifest.sequence < sequence) {
@@ -133,6 +133,33 @@ pub fn validate_manifest_route(
         return Err(ManifestError::InvalidPolicy);
     }
     Ok(())
+}
+
+fn valid_version_transition(source: &str, target: &str) -> bool {
+    if source == target || is_legacy_calendar_version(target) {
+        return false;
+    }
+    let Some(target) = semantic_version(target) else {
+        return false;
+    };
+    if is_legacy_calendar_version(source) {
+        return true;
+    }
+    semantic_version(source).is_some_and(|source| target > source)
+}
+
+fn semantic_version(value: &str) -> Option<(u64, u64, u64)> {
+    let mut components = value.split('.');
+    let major = components.next()?.parse().ok()?;
+    let minor = components.next()?.parse().ok()?;
+    let patch = components.next().map(str::parse).transpose().ok()?.unwrap_or(0);
+    (components.next().is_none()).then_some((major, minor, patch))
+}
+
+fn is_legacy_calendar_version(value: &str) -> bool {
+    matches!(value, "27.02" | "27.06" | "28.02")
+        || value.starts_with("2026.08")
+        || value.starts_with("27.02-")
 }
 
 fn valid_https_url(value: &str) -> bool {
@@ -176,8 +203,8 @@ mod tests {
             status: ManifestStatus::Available,
             valid_from: "2027-01-01T00:00:00Z".into(),
             valid_until: "2027-12-31T00:00:00Z".into(),
-            source: identity("27.02"),
-            target: identity("2027.04"),
+            source: identity("1.0"),
+            target: identity("1.1"),
             minimum_updater_version: "0.1.0".into(),
             repositories: vec![RepositoryTransition {
                 alias: "repo-oss".into(),
@@ -194,14 +221,25 @@ mod tests {
     #[test]
     fn rejects_replay_and_unsigned_style_urls() {
         assert_eq!(
-            validate_manifest_route(&manifest(), &identity("27.02"), Some(8)),
+            validate_manifest_route(&manifest(), &identity("1.0"), Some(8)),
             Err(ManifestError::Replay)
         );
         let mut invalid = manifest();
         invalid.repositories[0].base_url = "https://user:pass@example.test/repo?x=1".into();
         assert_eq!(
-            validate_manifest_route(&invalid, &identity("27.02"), None),
+            validate_manifest_route(&invalid, &identity("1.0"), None),
             Err(ManifestError::InvalidRepository)
         );
+    }
+
+    #[test]
+    fn accepts_semantic_upgrades_and_only_legacy_sources() {
+        assert!(valid_version_transition("1.0", "1.0.1"));
+        assert!(valid_version_transition("1.0.1", "1.1"));
+        assert!(valid_version_transition("27.02", "1.0"));
+        assert!(valid_version_transition("2026.08-alpha6", "1.0"));
+        assert!(!valid_version_transition("1.1", "1.0.1"));
+        assert!(!valid_version_transition("1.0", "27.06"));
+        assert!(!valid_version_transition("1.0-alpha.7", "1.0"));
     }
 }

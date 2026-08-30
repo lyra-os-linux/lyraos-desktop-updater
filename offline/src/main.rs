@@ -317,13 +317,13 @@ mod tests {
             operation: OperationKind::ReleaseUpgrade,
             state,
             source: ReleaseIdentity {
-                version: "27.02".into(),
+                version: "1.0".into(),
                 edition: "desktop".into(),
                 architecture: "x86_64".into(),
                 build_id: "baseline".into(),
             },
             target: Some(ReleaseIdentity {
-                version: "27.10".into(),
+                version: "1.1".into(),
                 edition: "desktop".into(),
                 architecture: "x86_64".into(),
                 build_id: "candidate".into(),
