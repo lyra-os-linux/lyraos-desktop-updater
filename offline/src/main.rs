@@ -176,10 +176,15 @@ fn install_repository_set(manifest: &ReleaseManifest, operation_id: &str) -> Res
     fs::set_permissions(&staging, fs::Permissions::from_mode(0o755))
         .map_err(|error| error.to_string())?;
     for repository in &manifest.repositories {
+        let key_path = Path::new(STATE_ROOT)
+            .join(operation_id)
+            .join("keys")
+            .join(format!("{}.asc", repository.alias));
         let content = format!(
-            "[{alias}]\nname={alias}\nenabled=1\nautorefresh=1\nkeeppackages=0\nbaseurl={url}\ntype=rpm-md\ngpgcheck=1\npriority={priority}\n",
+            "[{alias}]\nname={alias}\nenabled=1\nautorefresh=1\nkeeppackages=0\nbaseurl={url}\ngpgkey={key_url}\ntype=rpm-md\ngpgcheck=1\npriority={priority}\n",
             alias = repository.alias,
             url = repository.base_url,
+            key_url = format_args!("file://{}", key_path.display()),
             priority = repository.priority,
         );
         let path = staging.join(format!("{}.repo", repository.alias));

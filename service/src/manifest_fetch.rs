@@ -2,7 +2,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use lyra_upgrade_core::{ManifestError, ReleaseIdentity, ReleaseManifest, validate_manifest_route};
+use lyra_upgrade_core::{
+    ManifestError, ReleaseIdentity, ReleaseManifest, RepositoryTransition, validate_manifest_route,
+};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
@@ -18,6 +20,8 @@ pub enum FetchError {
     Io(std::io::Error),
     Download,
     Signature,
+    RepositoryKey,
+    RepositoryKeyMismatch,
     TooLarge,
     Json(serde_json::Error),
     Route(ManifestError),
@@ -64,10 +68,29 @@ pub fn fetch_release_manifest(
     )
     .map_err(FetchError::Route)?;
     validate_time(&manifest)?;
+    for (index, repository) in manifest.repositories.iter().enumerate() {
+        let key_path = directory.path().join(format!("repository-key-{index}.asc"));
+        fetch_repository_key(repository, &key_path)?;
+    }
     Ok(manifest)
 }
 
-fn download(url: &'static str, destination: &Path) -> Result<(), FetchError> {
+pub fn fetch_repository_key(
+    repository: &RepositoryTransition,
+    destination: &Path,
+) -> Result<(), FetchError> {
+    download(&repository.signing_key_url, destination).map_err(|_| FetchError::RepositoryKey)?;
+    if fs::metadata(destination)?.len() > MAX_MANIFEST_BYTES {
+        return Err(FetchError::TooLarge);
+    }
+    let fingerprints = key_fingerprints(destination)?;
+    if !fingerprints.contains(&repository.signing_key_fingerprint) {
+        return Err(FetchError::RepositoryKeyMismatch);
+    }
+    Ok(())
+}
+
+fn download(url: &str, destination: &Path) -> Result<(), FetchError> {
     let status = Command::new("curl")
         .args([
             "--fail",
@@ -95,6 +118,42 @@ fn download(url: &'static str, destination: &Path) -> Result<(), FetchError> {
         .stderr(Stdio::null())
         .status()?;
     status.success().then_some(()).ok_or(FetchError::Download)
+}
+
+fn key_fingerprints(key: &Path) -> Result<Vec<String>, FetchError> {
+    let output = Command::new("gpg")
+        .args([
+            "--batch",
+            "--quiet",
+            "--no-options",
+            "--no-default-keyring",
+            "--keyring",
+            "/dev/null",
+            "--with-colons",
+            "--import-options",
+            "show-only",
+            "--import",
+        ])
+        .arg(key)
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("LC_ALL", "C")
+        .stdin(Stdio::null())
+        .output()?;
+    if !output.status.success() {
+        return Err(FetchError::RepositoryKey);
+    }
+    Ok(parse_fingerprints(&String::from_utf8_lossy(&output.stdout)))
+}
+
+fn parse_fingerprints(output: &str) -> Vec<String> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let fields: Vec<_> = line.split(':').collect();
+            (fields.first() == Some(&"fpr") && fields.len() > 9).then(|| fields[9].to_string())
+        })
+        .collect()
 }
 
 fn verify_signature(manifest: &Path, signature: &Path) -> Result<(), FetchError> {
@@ -133,4 +192,21 @@ pub fn read_last_manifest_sequence(path: &Path) -> Option<u64> {
 
 pub fn manifest_sequence_path() -> PathBuf {
     PathBuf::from("/var/lib/lyra-upgrade/last-manifest-sequence")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_fingerprints;
+
+    #[test]
+    fn parses_only_machine_readable_fingerprints() {
+        let output = "pub:-:2048:1:1234::::::\nfpr:::::::::AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:\nuid:::::::::Lyra:\nfpr:::::::::BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB:\n";
+        assert_eq!(
+            parse_fingerprints(output),
+            vec![
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+            ]
+        );
+    }
 }

@@ -6,6 +6,7 @@ use lyra_upgrade_core::{
     OperationState, OperationStateRecord, PersistenceError, ReleaseManifest, save_state,
 };
 
+use crate::manifest_fetch::{FetchError, fetch_repository_key};
 use crate::planner::{PlannerError, plan_update_with_cached_metadata};
 use lyra_upgrade_protocol::PlannedUpdate;
 
@@ -34,6 +35,7 @@ pub enum ExecutionError {
     SystemUpdateExists,
     Busy,
     Cancelled,
+    RepositoryKey(FetchError),
 }
 
 impl ExecutionError {
@@ -54,13 +56,19 @@ impl ExecutionError {
             Self::SystemUpdateExists => "SYSTEM_UPDATE_BUSY",
             Self::Busy => "TRANSACTION_BUSY",
             Self::Cancelled => "CANCELLED",
+            Self::RepositoryKey(_) => "REPOSITORY_KEY_FAILED",
         }
     }
 
     pub const fn is_blocking(&self) -> bool {
         matches!(
             self,
-            Self::PlanChanged | Self::Refresh(_) | Self::Replan(_) | Self::Download(_) | Self::Busy
+            Self::PlanChanged
+                | Self::Refresh(_)
+                | Self::Replan(_)
+                | Self::Download(_)
+                | Self::Busy
+                | Self::RepositoryKey(_)
         )
     }
 }
@@ -127,13 +135,18 @@ pub fn stage_release_upgrade(
     let raw_dir = cache_dir.join("raw");
     let solv_dir = cache_dir.join("solv");
     let packages_dir = cache_dir.join("packages");
+    let keys_dir = operation_dir.join("keys");
     fs::create_dir_all(&repos_dir).map_err(ExecutionError::Stage)?;
     fs::create_dir_all(&packages_dir).map_err(ExecutionError::Stage)?;
+    fs::create_dir_all(&keys_dir).map_err(ExecutionError::Stage)?;
     for repository in &manifest.repositories {
+        let key_path = keys_dir.join(format!("{}.asc", repository.alias));
+        fetch_repository_key(repository, &key_path).map_err(ExecutionError::RepositoryKey)?;
         let content = format!(
-            "[{alias}]\nname={alias}\nenabled=1\nautorefresh=0\nkeeppackages=0\nbaseurl={url}\ntype=rpm-md\ngpgcheck=1\npriority={priority}\n",
+            "[{alias}]\nname={alias}\nenabled=1\nautorefresh=0\nkeeppackages=0\nbaseurl={url}\ngpgkey={key_url}\ntype=rpm-md\ngpgcheck=1\npriority={priority}\n",
             alias = repository.alias,
             url = repository.base_url,
+            key_url = format_args!("file://{}", key_path.display()),
             priority = repository.priority,
         );
         write_private(

@@ -7,6 +7,7 @@ use lyra_upgrade_core::{
 use lyra_upgrade_protocol::PlannedUpdate;
 use sha2::{Digest, Sha256};
 
+use crate::manifest_fetch::{FetchError, fetch_repository_key};
 use crate::solver_xml::{SolverXmlError, parse_solver_xml};
 
 #[derive(Debug)]
@@ -18,6 +19,7 @@ pub enum PlannerError {
     Blocked(Vec<lyra_upgrade_core::PreflightIssue>),
     Plan(PlanError),
     Serialize(serde_json::Error),
+    RepositoryKey(FetchError),
 }
 
 pub fn plan_update_with_cached_metadata() -> Result<PlannedUpdate, PlannerError> {
@@ -96,12 +98,17 @@ pub fn plan_release_upgrade(manifest: &ReleaseManifest) -> Result<PlannedUpdate,
     let raw_dir = simulation.path().join("raw");
     let solv_dir = simulation.path().join("solv");
     let packages_dir = simulation.path().join("packages");
+    let keys_dir = simulation.path().join("keys");
     std::fs::create_dir_all(&repos_dir).map_err(PlannerError::Spawn)?;
+    std::fs::create_dir_all(&keys_dir).map_err(PlannerError::Spawn)?;
     for repository in &manifest.repositories {
+        let key_path = keys_dir.join(format!("{}.asc", repository.alias));
+        fetch_repository_key(repository, &key_path).map_err(PlannerError::RepositoryKey)?;
         let content = format!(
-            "[{alias}]\nname={alias}\nenabled=1\nautorefresh=0\nkeeppackages=0\nbaseurl={url}\ntype=rpm-md\ngpgcheck=1\npriority={priority}\n",
+            "[{alias}]\nname={alias}\nenabled=1\nautorefresh=0\nkeeppackages=0\nbaseurl={url}\ngpgkey={key_url}\ntype=rpm-md\ngpgcheck=1\npriority={priority}\n",
             alias = repository.alias,
             url = repository.base_url,
+            key_url = format_args!("file://{}", key_path.display()),
             priority = repository.priority,
         );
         std::fs::write(

@@ -36,6 +36,7 @@ pub enum ManifestStatus {
 pub struct RepositoryTransition {
     pub alias: String,
     pub base_url: String,
+    pub signing_key_url: String,
     pub signing_key_fingerprint: String,
     pub priority: u16,
 }
@@ -117,7 +118,10 @@ pub fn validate_manifest_route(
     }
     let mut aliases = std::collections::BTreeSet::new();
     for repository in &manifest.repositories {
-        if !valid_alias(&repository.alias) || !valid_https_url(&repository.base_url) {
+        if !valid_alias(&repository.alias)
+            || !valid_https_url(&repository.base_url)
+            || !valid_https_url(&repository.signing_key_url)
+        {
             return Err(ManifestError::InvalidRepository);
         }
         if !aliases.insert(&repository.alias) {
@@ -229,6 +233,8 @@ mod tests {
             repositories: vec![RepositoryTransition {
                 alias: "repo-oss".into(),
                 base_url: "https://download.opensuse.org/distribution/leap/16.1/repo/oss/".into(),
+                signing_key_url: "https://download.opensuse.org/repositories/keys/repo-oss.asc"
+                    .into(),
                 signing_key_fingerprint: "01B63EEDBE6B079126A0116EFA7353A131ECEFEB".into(),
                 priority: 20,
             }],

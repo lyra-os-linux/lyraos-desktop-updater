@@ -78,10 +78,11 @@
     "repository": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["alias", "base_url", "signing_key_fingerprint", "priority"],
+      "required": ["alias", "base_url", "signing_key_url", "signing_key_fingerprint", "priority"],
       "properties": {
         "alias": { "type": "string", "pattern": "^[A-Za-z0-9._:-]+$" },
         "base_url": { "type": "string", "format": "uri", "pattern": "^https://" },
+        "signing_key_url": { "type": "string", "format": "uri", "pattern": "^https://" },
         "signing_key_fingerprint": { "type": "string", "pattern": "^[0-9A-F]{40}$" },
         "priority": { "type": "integer", "minimum": 1, "maximum": 200 }
       }
