@@ -78,6 +78,8 @@ install -Dm0644 packaging/lyra-upgrade-offline.service \
     %{buildroot}%{_unitdir}/lyra-upgrade-offline.service
 install -Dm0644 packaging/lyra-upgrade-verify.service \
     %{buildroot}%{_unitdir}/lyra-upgrade-verify.service
+install -Dm0644 packaging/lyra-upgrade-probe.service \
+    %{buildroot}%{_unitdir}/lyra-upgrade-probe.service
 install -Dm0644 packaging/90-lyra-refresh.conf \
     %{buildroot}%{_sysconfdir}/zypp/zypp.conf.d/90-lyra-refresh.conf
 install -Dm0644 %{SOURCE3} \
@@ -90,19 +92,21 @@ ln -s %{_unitdir}/lyra-upgrade-offline.service \
 install -d %{buildroot}%{_unitdir}/multi-user.target.wants
 ln -s %{_unitdir}/lyra-upgrade-verify.service \
     %{buildroot}%{_unitdir}/multi-user.target.wants/lyra-upgrade-verify.service
+ln -s %{_unitdir}/lyra-upgrade-probe.service \
+    %{buildroot}%{_unitdir}/multi-user.target.wants/lyra-upgrade-probe.service
 
 %check
 cargo test --offline --workspace
 desktop-file-validate %{buildroot}%{_datadir}/applications/org.lyraos.LyraUpgrade.desktop
 
 %post
-%systemd_post lyra-upgrade-offline.service lyra-upgrade-verify.service
+%systemd_post lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service
 
 %preun
-%systemd_preun lyra-upgrade-offline.service lyra-upgrade-verify.service
+%systemd_preun lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service
 
 %postun
-%systemd_postun_with_restart lyra-upgrade-offline.service lyra-upgrade-verify.service
+%systemd_postun_with_restart lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service
 
 %files
 %license LICENSE
@@ -121,9 +125,11 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/org.lyraos.LyraUpgrad
 %{_datadir}/icons/hicolor/512x512/apps/org.lyraos.LyraUpgrade.png
 %{_unitdir}/lyra-upgrade-offline.service
 %{_unitdir}/lyra-upgrade-verify.service
+%{_unitdir}/lyra-upgrade-probe.service
 %dir %{_unitdir}/system-update.target.wants
 %{_unitdir}/system-update.target.wants/lyra-upgrade-offline.service
 %{_unitdir}/multi-user.target.wants/lyra-upgrade-verify.service
+%{_unitdir}/multi-user.target.wants/lyra-upgrade-probe.service
 %dir %{_sysconfdir}/zypp
 %dir %{_sysconfdir}/zypp/zypp.conf.d
 %config(noreplace) %{_sysconfdir}/zypp/zypp.conf.d/90-lyra-refresh.conf

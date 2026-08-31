@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Write;
+use std::os::unix::fs::FileTypeExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -7,6 +9,7 @@ use lyra_upgrade_core::{OperationState, load_state};
 use serde::Serialize;
 
 const STATE_ROOT: &str = "/var/lib/lyra-upgrade/operations";
+const VIRTIO_EVIDENCE_PORT: &str = "/dev/virtio-ports/org.lyraos.UpgradeEvidence";
 
 #[derive(Debug, Serialize)]
 struct GuestEvidence {
@@ -39,13 +42,50 @@ struct UpgradeEvidence {
 }
 
 fn main() {
+    let arguments = std::env::args().collect::<Vec<_>>();
+    let emit_virtio = match arguments.as_slice() {
+        [_] => false,
+        [_, argument] if argument == "--emit-virtio" => true,
+        _ => {
+            eprintln!("usage: lyra-upgrade-probe [--emit-virtio]");
+            std::process::exit(2);
+        }
+    };
     match collect(Path::new("/"), Path::new(STATE_ROOT), package_version()) {
-        Ok(evidence) => println!("{}", serde_json::to_string_pretty(&evidence).unwrap()),
+        Ok(evidence) => {
+            if emit_virtio {
+                if let Err(error) = emit_to_virtio(&evidence, Path::new(VIRTIO_EVIDENCE_PORT)) {
+                    eprintln!("lyra-upgrade-probe: {error}");
+                    std::process::exit(1);
+                }
+            } else {
+                println!("{}", serde_json::to_string_pretty(&evidence).unwrap());
+            }
+        }
         Err(error) => {
             eprintln!("lyra-upgrade-probe: {error}");
             std::process::exit(1);
         }
     }
+}
+
+fn emit_to_virtio(evidence: &GuestEvidence, path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+    let metadata = fs::symlink_metadata(path).map_err(|_| "cannot inspect virtio evidence port")?;
+    if !metadata.file_type().is_char_device() {
+        return Err("virtio evidence port is not a character device".into());
+    }
+    let mut port = fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .map_err(|_| "cannot open virtio evidence port")?;
+    serde_json::to_writer(&mut port, evidence).map_err(|_| "cannot serialize guest evidence")?;
+    port.write_all(b"\n")
+        .map_err(|_| "cannot write guest evidence")?;
+    port.flush()
+        .map_err(|_| "cannot flush guest evidence".to_string())
 }
 
 fn collect(
@@ -200,6 +240,40 @@ mod tests {
         fs::remove_file(root.join("sys/class/dmi/id/product_uuid")).unwrap();
         symlink(target, root.join("sys/class/dmi/id/product_uuid")).unwrap();
         assert!(collect(&root, &root.join("state"), None).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn virtio_emission_is_optional_and_rejects_regular_files() {
+        let root =
+            std::env::temp_dir().join(format!("lyra-upgrade-probe-port-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir(&root).unwrap();
+        let evidence = GuestEvidence {
+            schema: 1,
+            status: "observed",
+            mode: "guest-upgrade-state",
+            installation_uuid: "12345678-1234-4234-8234-123456789abc".into(),
+            boot_id: "87654321-4321-4321-8321-cba987654321".into(),
+            session: "installed",
+            release: ReleaseEvidence {
+                id: "lyra-os".into(),
+                version_id: "1.0".into(),
+                architecture: "x86_64",
+            },
+            upgrade: UpgradeEvidence {
+                package_version: None,
+                operation_id: None,
+                operation_state: None,
+                operation_sequence: None,
+                source_version: None,
+                target_version: None,
+                snapshot_recorded: None,
+            },
+        };
+        assert!(emit_to_virtio(&evidence, &root.join("absent")).is_ok());
+        fs::write(root.join("regular"), b"").unwrap();
+        assert!(emit_to_virtio(&evidence, &root.join("regular")).is_err());
         fs::remove_dir_all(root).unwrap();
     }
 }

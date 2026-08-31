@@ -1,0 +1,18 @@
+[Unit]
+Description=Emit sanitized Lyra Upgrade VM evidence
+After=local-fs.target
+ConditionPathExists=/dev/virtio-ports/org.lyraos.UpgradeEvidence
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/lyra-upgrade-probe --emit-virtio
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

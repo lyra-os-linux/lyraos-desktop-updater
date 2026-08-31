@@ -60,6 +60,11 @@ class UpgradePackagingTests(unittest.TestCase):
         self.assertIn("%dir %{_unitdir}/system-update.target.wants", spec)
         self.assertIn("system-update.target.wants/lyra-upgrade-offline.service", spec)
         self.assertIn("multi-user.target.wants/lyra-upgrade-verify.service", spec)
+        self.assertIn("multi-user.target.wants/lyra-upgrade-probe.service", spec)
+        service = (PACKAGING / "lyra-upgrade-probe.service").read_text(encoding="utf-8")
+        self.assertIn("ConditionPathExists=/dev/virtio-ports/org.lyraos.UpgradeEvidence", service)
+        self.assertIn("ExecStart=/usr/bin/lyra-upgrade-probe --emit-virtio", service)
+        self.assertIn("ProtectSystem=strict", service)
         self.assertNotIn("groupadd -r lyra-upgrade", spec)
 
     def test_zypp_refresh_policy_owns_created_directories(self) -> None:
