@@ -15,7 +15,8 @@ use lyra_upgrade_service::executor::{
     ExecutionObserver, OutputStream, execute_update, failure_state, stage_release_upgrade,
 };
 use lyra_upgrade_service::manifest_fetch::{
-    fetch_release_manifest, manifest_sequence_path, read_last_manifest_sequence,
+    RELEASE_CHANNEL_PATH, fetch_release_manifest, manifest_sequence_path,
+    read_last_manifest_sequence, read_release_channel,
 };
 use lyra_upgrade_service::planner::{plan_release_upgrade, plan_update_with_cached_metadata};
 use time::OffsetDateTime;
@@ -154,9 +155,14 @@ impl Service {
             Ok(facts) => facts,
             Err(_) => return rejected(request_id, "DISCOVERY_FAILED"),
         };
+        let channel = match read_release_channel(std::path::Path::new(RELEASE_CHANNEL_PATH)) {
+            Ok(channel) => channel,
+            Err(_) => return rejected(request_id, "RELEASE_CHANNEL_INVALID"),
+        };
         let manifest = match fetch_release_manifest(
             &facts.release,
             read_last_manifest_sequence(&manifest_sequence_path()),
+            channel,
         ) {
             Ok(manifest) => manifest,
             Err(_) => return rejected(request_id, "MANIFEST_INVALID"),

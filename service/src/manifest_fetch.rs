@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use lyra_upgrade_core::{
-    ManifestError, ReleaseIdentity, ReleaseManifest, RepositoryTransition, validate_manifest_route,
+    ManifestChannelPolicy, ManifestError, ReleaseIdentity, ReleaseManifest, RepositoryTransition,
+    validate_manifest_route,
 };
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -13,6 +14,7 @@ pub const RELEASE_MANIFEST_URL: &str =
 pub const RELEASE_MANIFEST_SIGNATURE_URL: &str =
     "https://downloads.sourceforge.net/project/lyra/releases/1.0/desktop/releases-v1.json.asc";
 pub const RELEASE_KEYRING: &str = "/usr/share/lyra-upgrade/release-signing-key.gpg";
+pub const RELEASE_CHANNEL_PATH: &str = "/etc/lyra-upgrade/channel";
 const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug)]
@@ -28,6 +30,7 @@ pub enum FetchError {
     InvalidTime,
     NotYetValid,
     Expired,
+    InvalidChannel,
 }
 
 impl From<std::io::Error> for FetchError {
@@ -45,6 +48,7 @@ impl From<serde_json::Error> for FetchError {
 pub fn fetch_release_manifest(
     installed: &ReleaseIdentity,
     last_sequence: Option<u64>,
+    channel: ManifestChannelPolicy,
 ) -> Result<ReleaseManifest, FetchError> {
     let directory = tempfile::Builder::new()
         .prefix("lyra-upgrade-manifest-")
@@ -65,6 +69,7 @@ pub fn fetch_release_manifest(
         installed,
         last_sequence,
         env!("CARGO_PKG_VERSION"),
+        channel,
     )
     .map_err(FetchError::Route)?;
     validate_time(&manifest)?;
@@ -190,13 +195,28 @@ pub fn read_last_manifest_sequence(path: &Path) -> Option<u64> {
     fs::read_to_string(path).ok()?.trim().parse().ok()
 }
 
+pub fn read_release_channel(path: &Path) -> Result<ManifestChannelPolicy, FetchError> {
+    match fs::read_to_string(path) {
+        Ok(value) => match value.trim() {
+            "stable" => Ok(ManifestChannelPolicy::Stable),
+            "testing" => Ok(ManifestChannelPolicy::Testing),
+            _ => Err(FetchError::InvalidChannel),
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(ManifestChannelPolicy::Stable)
+        }
+        Err(error) => Err(FetchError::Io(error)),
+    }
+}
+
 pub fn manifest_sequence_path() -> PathBuf {
     PathBuf::from("/var/lib/lyra-upgrade/last-manifest-sequence")
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_fingerprints;
+    use super::{parse_fingerprints, read_release_channel};
+    use lyra_upgrade_core::ManifestChannelPolicy;
 
     #[test]
     fn parses_only_machine_readable_fingerprints() {
@@ -208,5 +228,22 @@ mod tests {
                 "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
             ]
         );
+    }
+
+    #[test]
+    fn release_channel_defaults_stable_and_rejects_ambiguous_values() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("channel");
+        assert_eq!(
+            read_release_channel(&path).unwrap(),
+            ManifestChannelPolicy::Stable
+        );
+        std::fs::write(&path, "testing\n").unwrap();
+        assert_eq!(
+            read_release_channel(&path).unwrap(),
+            ManifestChannelPolicy::Testing
+        );
+        std::fs::write(&path, "beta\n").unwrap();
+        assert!(read_release_channel(&path).is_err());
     }
 }

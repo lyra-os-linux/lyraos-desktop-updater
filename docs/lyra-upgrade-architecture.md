@@ -61,6 +61,12 @@ exceções explícitas do solver. Campos ou versões de schema desconhecidos sã
 rejeitados antes de qualquer escrita no sistema.
 Schemas posteriores recebem arquivo novo; o v1 nunca muda de significado.
 
+O canal instalado é `stable`, em `/etc/lyra-upgrade/channel`. Somente o valor
+administrativo explícito `testing` permite manifestos com status `testing` ou
+destino semanticamente pré-release; arquivo ausente mantém `stable` e qualquer
+outro conteúdo bloqueia a descoberta. Manifestos `paused` e `withdrawn`
+permanecem indisponíveis em ambos os canais.
+
 ## Estado persistente
 
 Cada transição incrementa `sequence` e persiste:

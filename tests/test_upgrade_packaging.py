@@ -100,6 +100,14 @@ class UpgradePackagingTests(unittest.TestCase):
             spec,
         )
 
+    def test_release_channel_is_stable_and_admin_opt_in(self) -> None:
+        self.assertEqual(
+            (PACKAGING / "lyra-upgrade-channel").read_text(encoding="utf-8"),
+            "stable\n",
+        )
+        spec = (PACKAGING / "lyra-upgrade.spec").read_text(encoding="utf-8")
+        self.assertIn("%config(noreplace) %{_sysconfdir}/lyra-upgrade/channel", spec)
+
     def test_runtime_dependencies_cover_fixed_command_allowlist(self) -> None:
         spec = (PACKAGING / "lyra-upgrade.spec").read_text(encoding="utf-8")
         required = {

@@ -31,6 +31,12 @@ pub enum ManifestStatus {
     Withdrawn,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ManifestChannelPolicy {
+    Stable,
+    Testing,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RepositoryTransition {
@@ -69,6 +75,7 @@ impl ReleaseManifest {
 pub enum ManifestError {
     UnsupportedSchema,
     NotAvailable,
+    PrereleaseNotAllowed,
     SourceMismatch,
     TargetNotNewer,
     UnsupportedTarget,
@@ -86,11 +93,15 @@ pub fn validate_manifest_route(
     installed: &ReleaseIdentity,
     last_sequence: Option<u64>,
     updater_version: &str,
+    channel: ManifestChannelPolicy,
 ) -> Result<(), ManifestError> {
     if manifest.schema_version != MANIFEST_SCHEMA_VERSION {
         return Err(ManifestError::UnsupportedSchema);
     }
-    if manifest.status != ManifestStatus::Available {
+    if manifest.status != ManifestStatus::Available
+        && !(manifest.status == ManifestStatus::Testing
+            && channel == ManifestChannelPolicy::Testing)
+    {
         return Err(ManifestError::NotAvailable);
     }
     if manifest.source.version != installed.version
@@ -104,6 +115,9 @@ pub fn validate_manifest_route(
     }
     if !valid_version_transition(&installed.version, &manifest.target.version) {
         return Err(ManifestError::TargetNotNewer);
+    }
+    if is_prerelease(&manifest.target.version) && channel != ManifestChannelPolicy::Testing {
+        return Err(ManifestError::PrereleaseNotAllowed);
     }
     if manifest.sequence == 0 || last_sequence.is_some_and(|sequence| manifest.sequence <= sequence)
     {
@@ -157,13 +171,13 @@ fn valid_version_transition(source: &str, target: &str) -> bool {
     if source == target || is_legacy_calendar_version(target) {
         return false;
     }
-    let Some(target) = semantic_version(target) else {
+    let Some((target, _)) = release_version(target) else {
         return false;
     };
     if is_legacy_calendar_version(source) {
         return true;
     }
-    semantic_version(source).is_some_and(|source| target > source)
+    release_version(source).is_some_and(|(source, _)| target > source)
 }
 
 fn semantic_version(value: &str) -> Option<(u64, u64, u64)> {
@@ -177,6 +191,25 @@ fn semantic_version(value: &str) -> Option<(u64, u64, u64)> {
         .ok()?
         .unwrap_or(0);
     (components.next().is_none()).then_some((major, minor, patch))
+}
+
+fn is_prerelease(value: &str) -> bool {
+    release_version(value).is_some_and(|(_, prerelease)| prerelease)
+}
+
+fn release_version(value: &str) -> Option<((u64, u64, u64), bool)> {
+    match value.split_once('-') {
+        None => semantic_version(value).map(|version| (version, false)),
+        Some((version, suffix))
+            if !suffix.is_empty()
+                && suffix
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-')) =>
+        {
+            semantic_version(version).map(|version| (version, true))
+        }
+        Some(_) => None,
+    }
 }
 
 fn is_legacy_calendar_version(value: &str) -> bool {
@@ -247,13 +280,25 @@ mod tests {
     #[test]
     fn rejects_replay_and_unsigned_style_urls() {
         assert_eq!(
-            validate_manifest_route(&manifest(), &identity("1.0"), Some(8), "0.2.1"),
+            validate_manifest_route(
+                &manifest(),
+                &identity("1.0"),
+                Some(8),
+                "0.2.1",
+                ManifestChannelPolicy::Stable,
+            ),
             Err(ManifestError::Replay)
         );
         let mut invalid = manifest();
         invalid.repositories[0].base_url = "https://user:pass@example.test/repo?x=1".into();
         assert_eq!(
-            validate_manifest_route(&invalid, &identity("1.0"), None, "0.2.1"),
+            validate_manifest_route(
+                &invalid,
+                &identity("1.0"),
+                None,
+                "0.2.1",
+                ManifestChannelPolicy::Stable,
+            ),
             Err(ManifestError::InvalidRepository)
         );
     }
@@ -261,23 +306,47 @@ mod tests {
     #[test]
     fn rejects_repeated_sequences_and_incompatible_updaters() {
         assert_eq!(
-            validate_manifest_route(&manifest(), &identity("1.0"), Some(7), "0.2.1"),
+            validate_manifest_route(
+                &manifest(),
+                &identity("1.0"),
+                Some(7),
+                "0.2.1",
+                ManifestChannelPolicy::Stable,
+            ),
             Err(ManifestError::Replay)
         );
         assert_eq!(
-            validate_manifest_route(&manifest(), &identity("1.0"), None, "0.0.9"),
+            validate_manifest_route(
+                &manifest(),
+                &identity("1.0"),
+                None,
+                "0.0.9",
+                ManifestChannelPolicy::Stable,
+            ),
             Err(ManifestError::UpdaterTooOld)
         );
         let mut invalid = manifest();
         invalid.minimum_updater_version = "0.1-beta".into();
         assert_eq!(
-            validate_manifest_route(&invalid, &identity("1.0"), None, "0.2.1"),
+            validate_manifest_route(
+                &invalid,
+                &identity("1.0"),
+                None,
+                "0.2.1",
+                ManifestChannelPolicy::Stable,
+            ),
             Err(ManifestError::InvalidMinimumUpdaterVersion)
         );
         invalid = manifest();
         invalid.minimum_free_space_bytes = 0;
         assert_eq!(
-            validate_manifest_route(&invalid, &identity("1.0"), None, "0.2.1"),
+            validate_manifest_route(
+                &invalid,
+                &identity("1.0"),
+                None,
+                "0.2.1",
+                ManifestChannelPolicy::Stable,
+            ),
             Err(ManifestError::InvalidPolicy)
         );
     }
@@ -291,5 +360,44 @@ mod tests {
         assert!(!valid_version_transition("1.1", "1.0.1"));
         assert!(!valid_version_transition("1.0", "27.06"));
         assert!(!valid_version_transition("1.0-alpha.7", "1.0"));
+    }
+
+    #[test]
+    fn prerelease_routes_require_explicit_testing_policy() {
+        let mut candidate = manifest();
+        candidate.status = ManifestStatus::Testing;
+        candidate.target.version = "1.1-beta.1".into();
+        assert_eq!(
+            validate_manifest_route(
+                &candidate,
+                &identity("1.0"),
+                None,
+                "0.2.1",
+                ManifestChannelPolicy::Stable,
+            ),
+            Err(ManifestError::NotAvailable)
+        );
+        assert_eq!(
+            validate_manifest_route(
+                &candidate,
+                &identity("1.0"),
+                None,
+                "0.2.1",
+                ManifestChannelPolicy::Testing,
+            ),
+            Ok(())
+        );
+
+        candidate.status = ManifestStatus::Available;
+        assert_eq!(
+            validate_manifest_route(
+                &candidate,
+                &identity("1.0"),
+                None,
+                "0.2.1",
+                ManifestChannelPolicy::Stable,
+            ),
+            Err(ManifestError::PrereleaseNotAllowed)
+        );
     }
 }

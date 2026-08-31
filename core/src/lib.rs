@@ -11,7 +11,10 @@ mod sanitize;
 mod solver;
 
 pub use discovery::{CommandOutput, DiscoverError, DiscoveryBackend, SystemBackend, discover_host};
-pub use manifest::{ManifestError, ReleaseManifest, RepositoryTransition, validate_manifest_route};
+pub use manifest::{
+    ManifestChannelPolicy, ManifestError, ReleaseManifest, RepositoryTransition,
+    validate_manifest_route,
+};
 pub use persistence::{PersistenceError, load_state, save_state};
 pub use preflight::{
     HostFacts, PlanError, PreflightIssue, PreflightPolicy, PreflightReport, RepositoryFact,

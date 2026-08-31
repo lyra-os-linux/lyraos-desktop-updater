@@ -82,6 +82,8 @@ install -Dm0644 packaging/lyra-upgrade-probe.service \
     %{buildroot}%{_unitdir}/lyra-upgrade-probe.service
 install -Dm0644 packaging/90-lyra-refresh.conf \
     %{buildroot}%{_sysconfdir}/zypp/zypp.conf.d/90-lyra-refresh.conf
+install -Dm0644 packaging/lyra-upgrade-channel \
+    %{buildroot}%{_sysconfdir}/lyra-upgrade/channel
 install -Dm0644 %{SOURCE3} \
     %{buildroot}%{_datadir}/lyra-upgrade/release-signing-key.gpg
 install -Dm0644 %{SOURCE2} \
@@ -133,6 +135,8 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/org.lyraos.LyraUpgrad
 %dir %{_sysconfdir}/zypp
 %dir %{_sysconfdir}/zypp/zypp.conf.d
 %config(noreplace) %{_sysconfdir}/zypp/zypp.conf.d/90-lyra-refresh.conf
+%dir %{_sysconfdir}/lyra-upgrade
+%config(noreplace) %{_sysconfdir}/lyra-upgrade/channel
 %dir %{_datadir}/lyra-upgrade
 %{_datadir}/lyra-upgrade/release-signing-key.gpg
 %{_datadir}/lyra-upgrade/build-source.txt
