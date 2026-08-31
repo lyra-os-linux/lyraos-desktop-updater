@@ -1,4 +1,12 @@
 -------------------------------------------------------------------
+Mon Aug 31 00:00:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
+
+- Add a sanitized guest-state probe for upgrade rehearsals shared by all
+  Desktop editions.
+- Emit VM-only evidence through a hardened, conditional virtio-serial service.
+- Fail closed when the post-boot anti-replay sequence cannot be persisted.
+
+-------------------------------------------------------------------
 Wed Aug 26 00:00:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
 
 - Run update planning through the authorized service because zypper requires
