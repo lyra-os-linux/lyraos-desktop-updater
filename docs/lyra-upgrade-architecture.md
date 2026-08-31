@@ -52,6 +52,13 @@ Requests desconhecidos ou com campos adicionais não previstos falham.
 
 O schema inicial está em
 [`schemas/lyra-upgrade-protocol-v1.schema.json`](schemas/lyra-upgrade-protocol-v1.schema.json).
+
+O manifesto sucessor assinado obedece ao contrato público
+[`schemas/lyra-upgrade-release-manifest-v1.schema.json`](schemas/lyra-upgrade-release-manifest-v1.schema.json).
+Além da rota exata entre releases, ele fixa a sequência anti-replay, validade,
+versão mínima do atualizador, piso de espaço livre, repositórios, fingerprints e
+exceções explícitas do solver. Campos ou versões de schema desconhecidos são
+rejeitados antes de qualquer escrita no sistema.
 Schemas posteriores recebem arquivo novo; o v1 nunca muda de significado.
 
 ## Estado persistente

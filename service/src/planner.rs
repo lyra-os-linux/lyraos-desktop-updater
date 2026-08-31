@@ -152,7 +152,10 @@ pub fn plan_release_upgrade(manifest: &ReleaseManifest) -> Result<PlannedUpdate,
         .map_err(PlannerError::SolverXml)?;
     let preflight = evaluate_solver_preflight(
         &facts,
-        PreflightPolicy::default(),
+        PreflightPolicy {
+            minimum_free_space_bytes: manifest.minimum_free_space_bytes,
+            ..PreflightPolicy::default()
+        },
         &solver,
         &manifest.solver_policy(),
     );

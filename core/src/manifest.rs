@@ -15,6 +15,7 @@ pub struct ReleaseManifest {
     pub source: ReleaseIdentity,
     pub target: ReleaseIdentity,
     pub minimum_updater_version: String,
+    pub minimum_free_space_bytes: u64,
     pub repositories: Vec<RepositoryTransition>,
     pub allowed_removals: Vec<String>,
     pub allowed_vendor_transitions: Vec<VendorTransitionWire>,
@@ -135,12 +136,14 @@ pub fn validate_manifest_route(
             return Err(ManifestError::InvalidFingerprint);
         }
     }
-    if manifest.lockstep_packages.iter().any(|group| {
-        group.len() < 2 || group.iter().any(|package| !valid_package(package)) || {
-            let unique: std::collections::BTreeSet<_> = group.iter().collect();
-            unique.len() != group.len()
-        }
-    }) {
+    if manifest.minimum_free_space_bytes == 0
+        || manifest.lockstep_packages.iter().any(|group| {
+            group.len() < 2 || group.iter().any(|package| !valid_package(package)) || {
+                let unique: std::collections::BTreeSet<_> = group.iter().collect();
+                unique.len() != group.len()
+            }
+        })
+    {
         return Err(ManifestError::InvalidPolicy);
     }
     Ok(())
@@ -222,6 +225,7 @@ mod tests {
             source: identity("1.0"),
             target: identity("1.1"),
             minimum_updater_version: "0.1.0".into(),
+            minimum_free_space_bytes: 8 * 1024 * 1024 * 1024,
             repositories: vec![RepositoryTransition {
                 alias: "repo-oss".into(),
                 base_url: "https://download.opensuse.org/distribution/leap/16.1/repo/oss/".into(),
@@ -263,6 +267,12 @@ mod tests {
         assert_eq!(
             validate_manifest_route(&invalid, &identity("1.0"), None, "0.2.1"),
             Err(ManifestError::InvalidMinimumUpdaterVersion)
+        );
+        invalid = manifest();
+        invalid.minimum_free_space_bytes = 0;
+        assert_eq!(
+            validate_manifest_route(&invalid, &identity("1.0"), None, "0.2.1"),
+            Err(ManifestError::InvalidPolicy)
         );
     }
 

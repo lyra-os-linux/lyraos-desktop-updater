@@ -1,3 +1,4 @@
+import json
 import stat
 import unittest
 from pathlib import Path
@@ -8,6 +9,29 @@ PACKAGING = ROOT / "packaging"
 
 
 class UpgradePackagingTests(unittest.TestCase):
+    def test_public_release_manifest_schema_covers_security_policy(self) -> None:
+        schema = json.loads(
+            (ROOT / "docs/schemas/lyra-upgrade-release-manifest-v1.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        required = set(schema["required"])
+        self.assertTrue(
+            {
+                "sequence",
+                "valid_from",
+                "valid_until",
+                "minimum_updater_version",
+                "minimum_free_space_bytes",
+                "repositories",
+                "allowed_removals",
+                "allowed_vendor_transitions",
+                "lockstep_packages",
+            }.issubset(required)
+        )
+        self.assertFalse(schema["additionalProperties"])
+        self.assertFalse(schema["$defs"]["repository"]["additionalProperties"])
+
     def test_obs_source_generator_is_executable_and_reproducible_by_contract(self) -> None:
         script = PACKAGING / "make-obs-sources.sh"
         mode = script.stat().st_mode

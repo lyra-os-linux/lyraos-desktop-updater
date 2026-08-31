@@ -42,6 +42,7 @@ pub struct HostFacts {
 pub struct PreflightPolicy {
     pub minimum_battery_percent: u8,
     pub free_space_margin_bytes: u64,
+    pub minimum_free_space_bytes: u64,
     pub require_secure_boot_fact: bool,
 }
 
@@ -50,6 +51,7 @@ impl Default for PreflightPolicy {
         Self {
             minimum_battery_percent: 40,
             free_space_margin_bytes: 1024 * 1024 * 1024,
+            minimum_free_space_bytes: 0,
             require_secure_boot_fact: true,
         }
     }
@@ -120,7 +122,8 @@ pub fn evaluate_preflight(facts: &HostFacts, policy: PreflightPolicy) -> Preflig
         .required_download_bytes
         .saturating_add(facts.required_transaction_bytes)
         .saturating_add(facts.required_snapshot_bytes)
-        .saturating_add(policy.free_space_margin_bytes);
+        .saturating_add(policy.free_space_margin_bytes)
+        .max(policy.minimum_free_space_bytes);
     if facts.available_bytes < required_bytes {
         blockers.push(PreflightIssue::InsufficientSpace);
     }
@@ -360,6 +363,19 @@ mod tests {
                 .contains(&PreflightIssue::SnapperUnavailable)
         );
         assert!(report.blockers.contains(&PreflightIssue::InsufficientSpace));
+    }
+
+    #[test]
+    fn signed_release_floor_overrides_the_dynamic_space_estimate() {
+        let facts = healthy_facts();
+        let policy = PreflightPolicy {
+            free_space_margin_bytes: 0,
+            minimum_free_space_bytes: 9 * 1024 * 1024 * 1024,
+            ..PreflightPolicy::default()
+        };
+        let report = evaluate_preflight(&facts, policy);
+        assert_eq!(report.required_bytes, policy.minimum_free_space_bytes);
+        assert_eq!(report.blockers, vec![PreflightIssue::InsufficientSpace]);
     }
 
     #[test]
