@@ -82,6 +82,12 @@ terminada em `/`, sem credenciais, query ou fragmento. Somente nesse canal o
 serviço deriva `releases-v1.json` e `releases-v1.json.asc` dessa origem. Isso
 permite ensaios externos sem substituir ou flexibilizar o endpoint estável.
 
+`scripts/signing-handoff.py` prepara a transferência para o ambiente autorizado
+sem material secreto: manifesto canônico, SHA-256 e pedido que fixa o
+fingerprint `01B63EEDBE6B079126A0116EFA7353A131ECEFEB`. O retorno deve conter
+somente a assinatura destacada correspondente; a chave privada nunca é copiada
+para o host de desenvolvimento.
+
 A identidade usada para autorizar e verificar a rota vem de
 `/usr/lib/lyra-os/product-release`, pertencente ao RPM `lyra-release`. Versão,
 arquitetura e build ID formam uma única identidade transacionável. Os
