@@ -75,6 +75,13 @@ opcionalmente gera a assinatura destacada `releases-v1.json.asc` com uma chave
 indicada pelo fingerprint completo. A chave privada e o destino de publicação
 nunca fazem parte da imagem instalada.
 
+O canal `stable` usa exclusivamente as URLs compiladas no serviço. Quando um
+administrador opta explicitamente por `testing`, ele também deve criar
+`/etc/lyra-upgrade/testing-manifest-base-url` com uma única URL-base HTTPS,
+terminada em `/`, sem credenciais, query ou fragmento. Somente nesse canal o
+serviço deriva `releases-v1.json` e `releases-v1.json.asc` dessa origem. Isso
+permite ensaios externos sem substituir ou flexibilizar o endpoint estável.
+
 A identidade usada para autorizar e verificar a rota vem de
 `/usr/lib/lyra-os/product-release`, pertencente ao RPM `lyra-release`. Versão,
 arquitetura e build ID formam uma única identidade transacionável. Os

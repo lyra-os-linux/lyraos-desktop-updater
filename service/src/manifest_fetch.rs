@@ -15,6 +15,7 @@ pub const RELEASE_MANIFEST_SIGNATURE_URL: &str =
     "https://downloads.sourceforge.net/project/lyra/releases/1.0/desktop/releases-v1.json.asc";
 pub const RELEASE_KEYRING: &str = "/usr/share/lyra-upgrade/release-signing-key.gpg";
 pub const RELEASE_CHANNEL_PATH: &str = "/etc/lyra-upgrade/channel";
+pub const TESTING_MANIFEST_BASE_URL_PATH: &str = "/etc/lyra-upgrade/testing-manifest-base-url";
 const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug)]
@@ -55,8 +56,9 @@ pub fn fetch_release_manifest(
         .tempdir()?;
     let manifest_path = directory.path().join("manifest.json");
     let signature_path = directory.path().join("manifest.json.asc");
-    download(RELEASE_MANIFEST_URL, &manifest_path)?;
-    download(RELEASE_MANIFEST_SIGNATURE_URL, &signature_path)?;
+    let (manifest_url, signature_url) = manifest_urls(channel)?;
+    download(&manifest_url, &manifest_path)?;
+    download(&signature_url, &signature_path)?;
     if fs::metadata(&manifest_path)?.len() > MAX_MANIFEST_BYTES
         || fs::metadata(&signature_path)?.len() > MAX_MANIFEST_BYTES
     {
@@ -78,6 +80,44 @@ pub fn fetch_release_manifest(
         fetch_repository_key(repository, &key_path)?;
     }
     Ok(manifest)
+}
+
+fn manifest_urls(channel: ManifestChannelPolicy) -> Result<(String, String), FetchError> {
+    if channel == ManifestChannelPolicy::Stable {
+        return Ok((
+            RELEASE_MANIFEST_URL.into(),
+            RELEASE_MANIFEST_SIGNATURE_URL.into(),
+        ));
+    }
+    testing_manifest_urls(Path::new(TESTING_MANIFEST_BASE_URL_PATH))
+}
+
+fn testing_manifest_urls(path: &Path) -> Result<(String, String), FetchError> {
+    let metadata = fs::symlink_metadata(path)?;
+    if !metadata.file_type().is_file() || metadata.len() > 4096 {
+        return Err(FetchError::InvalidChannel);
+    }
+    let value = fs::read_to_string(path)?;
+    if value.lines().count() != 1 || value.trim() != value {
+        return Err(FetchError::InvalidChannel);
+    }
+    let base = url::Url::parse(&value).map_err(|_| FetchError::InvalidChannel)?;
+    if base.scheme() != "https"
+        || !base.username().is_empty()
+        || base.password().is_some()
+        || base.query().is_some()
+        || base.fragment().is_some()
+        || !base.path().ends_with('/')
+    {
+        return Err(FetchError::InvalidChannel);
+    }
+    let manifest = base
+        .join("releases-v1.json")
+        .map_err(|_| FetchError::InvalidChannel)?;
+    let signature = base
+        .join("releases-v1.json.asc")
+        .map_err(|_| FetchError::InvalidChannel)?;
+    Ok((manifest.into(), signature.into()))
 }
 
 pub fn fetch_repository_key(
@@ -215,7 +255,7 @@ pub fn manifest_sequence_path() -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_fingerprints, read_release_channel};
+    use super::{parse_fingerprints, read_release_channel, testing_manifest_urls};
     use lyra_upgrade_core::ManifestChannelPolicy;
 
     #[test]
@@ -245,5 +285,32 @@ mod tests {
         );
         std::fs::write(&path, "beta\n").unwrap();
         assert!(read_release_channel(&path).is_err());
+    }
+
+    #[test]
+    fn testing_manifest_source_is_explicit_https_and_fixed_filenames() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("testing-source");
+        std::fs::write(&path, "https://example.test/controlled/1/desktop/").unwrap();
+        assert_eq!(
+            testing_manifest_urls(&path).unwrap(),
+            (
+                "https://example.test/controlled/1/desktop/releases-v1.json".into(),
+                "https://example.test/controlled/1/desktop/releases-v1.json.asc".into(),
+            )
+        );
+        for invalid in [
+            "http://example.test/path/",
+            "https://user@example.test/path/",
+            "https://example.test/path/?query=1",
+            "https://example.test/path",
+            "https://example.test/path/\n",
+        ] {
+            std::fs::write(&path, invalid).unwrap();
+            assert!(
+                testing_manifest_urls(&path).is_err(),
+                "accepted {invalid:?}"
+            );
+        }
     }
 }
