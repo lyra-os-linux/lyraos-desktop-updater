@@ -134,7 +134,7 @@ pub enum DiscoverError {
 }
 
 pub fn discover_host(backend: &impl DiscoveryBackend) -> Result<HostFacts, DiscoverError> {
-    let release = parse_release(&backend.read(Path::new("/usr/lib/lyra-os/release"))?)?;
+    let release = parse_release(&backend.read(Path::new("/usr/lib/lyra-os/product-release"))?)?;
     let build_id = backend
         .read(Path::new("/usr/lib/lyra-os/build-info"))
         .ok()
@@ -432,8 +432,8 @@ mod tests {
             ..Fixture::default()
         };
         fixture.files.insert(
-            "/usr/lib/lyra-os/release".into(),
-            "LYRA_ARCHITECTURE='x86_64'\nLYRA_VERSION_ID='1.0'\nLYRA_ARTIFACT_VERSION='1.0-alpha.6'\n".into(),
+            "/usr/lib/lyra-os/product-release".into(),
+            "LYRA_ARCHITECTURE='x86_64'\nLYRA_VERSION_ID='1.0'\n".into(),
         );
         fixture
             .directories
@@ -482,7 +482,7 @@ mod tests {
     fn malformed_release_is_rejected() {
         let mut fixture = fixture();
         fixture.files.insert(
-            "/usr/lib/lyra-os/release".into(),
+            "/usr/lib/lyra-os/product-release".into(),
             "LYRA_ARCHITECTURE='x86_64'\nLYRA_VERSION_ID='$(touch /tmp/no)'\n".into(),
         );
         assert_eq!(discover_host(&fixture), Err(DiscoverError::InvalidRelease));
