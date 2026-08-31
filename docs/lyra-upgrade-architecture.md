@@ -67,6 +67,14 @@ destino semanticamente pré-release; arquivo ausente mantém `stable` e qualquer
 outro conteúdo bloqueia a descoberta. Manifestos `paused` e `withdrawn`
 permanecem indisponíveis em ambos os canais.
 
+O manifesto externo é produzido por `scripts/release-manifest.py`. A ferramenta
+rejeita campos desconhecidos, rotas inseguras, janelas de validade invertidas,
+políticas incompletas e fingerprints abreviados; em seguida grava
+`releases-v1.json` de forma canônica, sem sobrescrever artefatos existentes, e
+opcionalmente gera a assinatura destacada `releases-v1.json.asc` com uma chave
+indicada pelo fingerprint completo. A chave privada e o destino de publicação
+nunca fazem parte da imagem instalada.
+
 ## Estado persistente
 
 Cada transição incrementa `sequence` e persiste:
