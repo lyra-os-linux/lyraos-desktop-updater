@@ -56,7 +56,13 @@ pub fn fetch_release_manifest(
     }
     verify_signature(&manifest_path, &signature_path)?;
     let manifest: ReleaseManifest = serde_json::from_slice(&fs::read(manifest_path)?)?;
-    validate_manifest_route(&manifest, installed, last_sequence).map_err(FetchError::Route)?;
+    validate_manifest_route(
+        &manifest,
+        installed,
+        last_sequence,
+        env!("CARGO_PKG_VERSION"),
+    )
+    .map_err(FetchError::Route)?;
     validate_time(&manifest)?;
     Ok(manifest)
 }

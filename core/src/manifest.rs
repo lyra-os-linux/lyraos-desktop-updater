@@ -71,6 +71,8 @@ pub enum ManifestError {
     TargetNotNewer,
     UnsupportedTarget,
     Replay,
+    InvalidMinimumUpdaterVersion,
+    UpdaterTooOld,
     InvalidRepository,
     DuplicateRepository,
     InvalidFingerprint,
@@ -81,6 +83,7 @@ pub fn validate_manifest_route(
     manifest: &ReleaseManifest,
     installed: &ReleaseIdentity,
     last_sequence: Option<u64>,
+    updater_version: &str,
 ) -> Result<(), ManifestError> {
     if manifest.schema_version != MANIFEST_SCHEMA_VERSION {
         return Err(ManifestError::UnsupportedSchema);
@@ -100,8 +103,16 @@ pub fn validate_manifest_route(
     if !valid_version_transition(&installed.version, &manifest.target.version) {
         return Err(ManifestError::TargetNotNewer);
     }
-    if last_sequence.is_some_and(|sequence| manifest.sequence < sequence) {
+    if manifest.sequence == 0 || last_sequence.is_some_and(|sequence| manifest.sequence <= sequence)
+    {
         return Err(ManifestError::Replay);
+    }
+    let minimum_updater = semantic_version(&manifest.minimum_updater_version)
+        .ok_or(ManifestError::InvalidMinimumUpdaterVersion)?;
+    let current_updater =
+        semantic_version(updater_version).ok_or(ManifestError::InvalidMinimumUpdaterVersion)?;
+    if current_updater < minimum_updater {
+        return Err(ManifestError::UpdaterTooOld);
     }
     let mut aliases = std::collections::BTreeSet::new();
     for repository in &manifest.repositories {
@@ -152,7 +163,12 @@ fn semantic_version(value: &str) -> Option<(u64, u64, u64)> {
     let mut components = value.split('.');
     let major = components.next()?.parse().ok()?;
     let minor = components.next()?.parse().ok()?;
-    let patch = components.next().map(str::parse).transpose().ok()?.unwrap_or(0);
+    let patch = components
+        .next()
+        .map(str::parse)
+        .transpose()
+        .ok()?
+        .unwrap_or(0);
     (components.next().is_none()).then_some((major, minor, patch))
 }
 
@@ -221,14 +237,32 @@ mod tests {
     #[test]
     fn rejects_replay_and_unsigned_style_urls() {
         assert_eq!(
-            validate_manifest_route(&manifest(), &identity("1.0"), Some(8)),
+            validate_manifest_route(&manifest(), &identity("1.0"), Some(8), "0.2.1"),
             Err(ManifestError::Replay)
         );
         let mut invalid = manifest();
         invalid.repositories[0].base_url = "https://user:pass@example.test/repo?x=1".into();
         assert_eq!(
-            validate_manifest_route(&invalid, &identity("1.0"), None),
+            validate_manifest_route(&invalid, &identity("1.0"), None, "0.2.1"),
             Err(ManifestError::InvalidRepository)
+        );
+    }
+
+    #[test]
+    fn rejects_repeated_sequences_and_incompatible_updaters() {
+        assert_eq!(
+            validate_manifest_route(&manifest(), &identity("1.0"), Some(7), "0.2.1"),
+            Err(ManifestError::Replay)
+        );
+        assert_eq!(
+            validate_manifest_route(&manifest(), &identity("1.0"), None, "0.0.9"),
+            Err(ManifestError::UpdaterTooOld)
+        );
+        let mut invalid = manifest();
+        invalid.minimum_updater_version = "0.1-beta".into();
+        assert_eq!(
+            validate_manifest_route(&invalid, &identity("1.0"), None, "0.2.1"),
+            Err(ManifestError::InvalidMinimumUpdaterVersion)
         );
     }
 
