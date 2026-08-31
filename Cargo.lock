@@ -1801,6 +1801,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lyra-upgrade-probe"
+version = "0.2.0"
+dependencies = [
+ "lyra-upgrade-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "lyra-upgrade-protocol"
 version = "0.2.0"
 dependencies = [

@@ -62,6 +62,8 @@ install -Dm0755 target/release/lyra-upgrade-offline \
     %{buildroot}%{_libexecdir}/lyra-upgrade-offline
 install -Dm0755 target/release/lyra-upgrade-verify \
     %{buildroot}%{_libexecdir}/lyra-upgrade-verify
+install -Dm0755 target/release/lyra-upgrade-probe \
+    %{buildroot}%{_bindir}/lyra-upgrade-probe
 install -Dm0755 target/release/lyra-upgrade-ui \
     %{buildroot}%{_bindir}/lyra-upgrade-ui
 install -Dm0644 packaging/org.lyraos.LyraUpgrade.desktop \
@@ -107,6 +109,7 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/org.lyraos.LyraUpgrad
 %doc README.md
 %{_bindir}/lyra-upgrade
 %{_bindir}/lyra-upgrade-ui
+%{_bindir}/lyra-upgrade-probe
 %{_libexecdir}/lyra-upgrade-service
 %{_libexecdir}/lyra-upgrade-offline
 %{_libexecdir}/lyra-upgrade-verify

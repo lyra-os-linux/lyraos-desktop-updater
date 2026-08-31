@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["core", "protocol", "cli", "service", "offline", "verifier", "src-tauri"]
-default-members = ["core", "protocol", "cli", "service", "offline", "verifier", "src-tauri"]
+members = ["core", "protocol", "cli", "service", "offline", "verifier", "probe", "src-tauri"]
+default-members = ["core", "protocol", "cli", "service", "offline", "verifier", "probe", "src-tauri"]
 
 [workspace.package]
 version = "0.2.0"
