@@ -27,7 +27,9 @@ struct GuestEvidence {
 struct ReleaseEvidence {
     id: String,
     version_id: String,
-    architecture: &'static str,
+    edition: String,
+    architecture: String,
+    build_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -94,6 +96,7 @@ fn collect(
     package_version: Option<String>,
 ) -> Result<GuestEvidence, String> {
     let os_release = parse_os_release(&read_small(&root.join("etc/os-release"))?);
+    let product_release = read_small(&root.join("usr/lib/lyra-os/product-release"))?;
     let installation_uuid = read_small(&root.join("sys/class/dmi/id/product_uuid"))?.to_lowercase();
     let boot_id = read_small(&root.join("proc/sys/kernel/random/boot_id"))?.to_lowercase();
     validate_uuid(&installation_uuid)?;
@@ -112,8 +115,10 @@ fn collect(
         },
         release: ReleaseEvidence {
             id: required(&os_release, "ID")?,
-            version_id: required(&os_release, "VERSION_ID")?,
-            architecture: std::env::consts::ARCH,
+            version_id: product_fact(&product_release, "LYRA_VERSION_ID")?,
+            edition: product_fact(&product_release, "LYRA_EDITION")?,
+            architecture: product_fact(&product_release, "LYRA_ARCHITECTURE")?,
+            build_id: product_fact(&product_release, "LYRA_BUILD_ID")?,
         },
         upgrade: UpgradeEvidence {
             package_version,
@@ -156,6 +161,21 @@ fn required(values: &BTreeMap<String, String>, key: &str) -> Result<String, Stri
         .filter(|value| !value.is_empty())
         .cloned()
         .ok_or_else(|| format!("missing {key} in os-release"))
+}
+
+fn product_fact(input: &str, key: &str) -> Result<String, String> {
+    let prefix = format!("{key}='");
+    let value = input
+        .lines()
+        .find_map(|line| line.strip_prefix(&prefix)?.strip_suffix('\''))
+        .filter(|value| {
+            !value.is_empty()
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+        })
+        .ok_or_else(|| format!("missing or invalid {key} in product-release"))?;
+    Ok(value.to_string())
 }
 
 fn validate_uuid(value: &str) -> Result<(), String> {
@@ -211,11 +231,17 @@ mod tests {
         let root = std::env::temp_dir().join(format!("lyra-upgrade-probe-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("etc")).unwrap();
+        fs::create_dir_all(root.join("usr/lib/lyra-os")).unwrap();
         fs::create_dir_all(root.join("sys/class/dmi/id")).unwrap();
         fs::create_dir_all(root.join("proc/sys/kernel/random")).unwrap();
         fs::write(
             root.join("etc/os-release"),
             "ID=lyra-os\nVERSION_ID=1.0-alpha.7\nPRETTY_NAME=secret\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("usr/lib/lyra-os/product-release"),
+            "LYRA_VERSION_ID='1.0'\nLYRA_EDITION='desktop'\nLYRA_ARCHITECTURE='x86_64'\nLYRA_BUILD_ID='lyra-release-1.0'\n",
         )
         .unwrap();
         fs::write(
@@ -232,7 +258,8 @@ mod tests {
         let json = serde_json::to_value(evidence).unwrap();
         assert_eq!(json["status"], "observed");
         assert_eq!(json["session"], "installed");
-        assert_eq!(json["release"]["version_id"], "1.0-alpha.7");
+        assert_eq!(json["release"]["version_id"], "1.0");
+        assert_eq!(json["release"]["build_id"], "lyra-release-1.0");
         assert!(json.to_string().find("secret").is_none());
 
         let target = root.join("uuid-target");
@@ -259,7 +286,9 @@ mod tests {
             release: ReleaseEvidence {
                 id: "lyra-os".into(),
                 version_id: "1.0".into(),
-                architecture: "x86_64",
+                edition: "desktop".into(),
+                architecture: "x86_64".into(),
+                build_id: "lyra-release-1.0".into(),
             },
             upgrade: UpgradeEvidence {
                 package_version: None,
