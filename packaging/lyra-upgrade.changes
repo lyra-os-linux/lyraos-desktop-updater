@@ -1,4 +1,13 @@
 -------------------------------------------------------------------
+Mon Aug 31 18:00:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
+
+- Read the complete version, architecture and build identity from the
+  RPM-owned product-release file.
+- Report that transacted identity through the sanitized VM evidence probe.
+- Enforce manifest replay, updater-version, repository-key, free-space and
+  prerelease-channel policies for controlled release upgrades.
+
+-------------------------------------------------------------------
 Mon Aug 31 00:00:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
 
 - Add a sanitized guest-state probe for upgrade rehearsals shared by all
