@@ -135,11 +135,6 @@ pub enum DiscoverError {
 
 pub fn discover_host(backend: &impl DiscoveryBackend) -> Result<HostFacts, DiscoverError> {
     let release = parse_release(&backend.read(Path::new("/usr/lib/lyra-os/product-release"))?)?;
-    let build_id = backend
-        .read(Path::new("/usr/lib/lyra-os/build-info"))
-        .ok()
-        .and_then(|content| parse_assignment(&content, "LYRA_BUILD_COMMIT"))
-        .unwrap_or_else(|| "unrecorded".into());
 
     let root_filesystem = successful_stdout(
         backend.run("findmnt", &["--noheadings", "--output", "FSTYPE", "/"])?,
@@ -181,7 +176,7 @@ pub fn discover_host(backend: &impl DiscoveryBackend) -> Result<HostFacts, Disco
             version: release.version,
             edition: "desktop".into(),
             architecture: release.architecture,
-            build_id,
+            build_id: release.build_id,
         },
         root_filesystem,
         snapper_root_configured,
@@ -224,6 +219,7 @@ fn discover_package_lock(backend: &impl DiscoveryBackend) -> Result<bool, Discov
 struct ParsedRelease {
     version: String,
     architecture: String,
+    build_id: String,
 }
 
 fn parse_release(content: &str) -> Result<ParsedRelease, DiscoverError> {
@@ -231,16 +227,21 @@ fn parse_release(content: &str) -> Result<ParsedRelease, DiscoverError> {
         parse_assignment(content, "LYRA_VERSION_ID").ok_or(DiscoverError::InvalidRelease)?;
     let architecture =
         parse_assignment(content, "LYRA_ARCHITECTURE").ok_or(DiscoverError::InvalidRelease)?;
+    let build_id =
+        parse_assignment(content, "LYRA_BUILD_ID").ok_or(DiscoverError::InvalidRelease)?;
     if version.is_empty()
         || architecture.is_empty()
+        || build_id.is_empty()
         || !version.bytes().all(is_safe_release_byte)
         || !architecture.bytes().all(is_safe_release_byte)
+        || !build_id.bytes().all(is_safe_release_byte)
     {
         return Err(DiscoverError::InvalidRelease);
     }
     Ok(ParsedRelease {
         version,
         architecture,
+        build_id,
     })
 }
 
@@ -433,7 +434,8 @@ mod tests {
         };
         fixture.files.insert(
             "/usr/lib/lyra-os/product-release".into(),
-            "LYRA_ARCHITECTURE='x86_64'\nLYRA_VERSION_ID='1.0'\n".into(),
+            "LYRA_ARCHITECTURE='x86_64'\nLYRA_VERSION_ID='1.0'\nLYRA_BUILD_ID='lyra-release-1.0'\n"
+                .into(),
         );
         fixture
             .directories
@@ -471,6 +473,7 @@ mod tests {
     fn discovers_supported_host_without_network_or_mutation() {
         let facts = discover_host(&fixture()).unwrap();
         assert_eq!(facts.release.version, "1.0");
+        assert_eq!(facts.release.build_id, "lyra-release-1.0");
         assert_eq!(facts.root_filesystem, "btrfs");
         assert!(facts.snapper_root_configured);
         assert_eq!(facts.secure_boot_enabled, Some(true));
@@ -483,7 +486,7 @@ mod tests {
         let mut fixture = fixture();
         fixture.files.insert(
             "/usr/lib/lyra-os/product-release".into(),
-            "LYRA_ARCHITECTURE='x86_64'\nLYRA_VERSION_ID='$(touch /tmp/no)'\n".into(),
+            "LYRA_ARCHITECTURE='x86_64'\nLYRA_VERSION_ID='$(touch /tmp/no)'\nLYRA_BUILD_ID='lyra-release-1.0'\n".into(),
         );
         assert_eq!(discover_host(&fixture), Err(DiscoverError::InvalidRelease));
     }

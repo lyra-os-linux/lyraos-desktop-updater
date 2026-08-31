@@ -76,7 +76,8 @@ indicada pelo fingerprint completo. A chave privada e o destino de publicação
 nunca fazem parte da imagem instalada.
 
 A identidade usada para autorizar e verificar a rota vem de
-`/usr/lib/lyra-os/product-release`, pertencente ao RPM `lyra-release`. Os
+`/usr/lib/lyra-os/product-release`, pertencente ao RPM `lyra-release`. Versão,
+arquitetura e build ID formam uma única identidade transacionável. Os
 metadados completos da composição permanecem em `/usr/lib/lyra-os/release` e
 não são usados como identidade atualizável. Assim, o solver inclui a mudança de
 release no plano e o `zypper dup` consegue instalar a identidade sucessora
