@@ -10,9 +10,9 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 pub const RELEASE_MANIFEST_URL: &str =
-    "https://downloads.sourceforge.net/project/lyra/releases/1.0/desktop/releases-v1.json";
+    "https://downloads.sourceforge.net/project/lyra/releases/1.1/desktop/releases-v1.json";
 pub const RELEASE_MANIFEST_SIGNATURE_URL: &str =
-    "https://downloads.sourceforge.net/project/lyra/releases/1.0/desktop/releases-v1.json.asc";
+    "https://downloads.sourceforge.net/project/lyra/releases/1.1/desktop/releases-v1.json.asc";
 pub const RELEASE_KEYRING: &str = "/usr/share/lyra-upgrade/release-signing-key.gpg";
 pub const RELEASE_CHANNEL_PATH: &str = "/etc/lyra-upgrade/channel";
 pub const TESTING_MANIFEST_BASE_URL_PATH: &str = "/etc/lyra-upgrade/testing-manifest-base-url";

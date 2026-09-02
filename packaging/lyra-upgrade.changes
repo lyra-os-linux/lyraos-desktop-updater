@@ -1,4 +1,16 @@
 -------------------------------------------------------------------
+Wed Sep  2 12:00:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
+
+- Read the canonical /usr/lib/os-release file when collecting VM evidence.
+- Accept the udev-managed virtio-port symlink while validating the opened
+  endpoint as a character device.
+
+-------------------------------------------------------------------
+Tue Sep  1 17:20:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
+
+- Read the stable release manifest from the Lyra OS 1.1 publication series.
+
+-------------------------------------------------------------------
 Mon Aug 31 19:00:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
 
 - Allow an explicit HTTPS manifest source only after administrative opt-in to

@@ -75,14 +75,16 @@ fn emit_to_virtio(evidence: &GuestEvidence, path: &Path) -> Result<(), String> {
     if !path.exists() {
         return Ok(());
     }
-    let metadata = fs::symlink_metadata(path).map_err(|_| "cannot inspect virtio evidence port")?;
-    if !metadata.file_type().is_char_device() {
-        return Err("virtio evidence port is not a character device".into());
-    }
     let mut port = fs::OpenOptions::new()
         .write(true)
         .open(path)
         .map_err(|_| "cannot open virtio evidence port")?;
+    let metadata = port
+        .metadata()
+        .map_err(|_| "cannot inspect virtio evidence port")?;
+    if !metadata.file_type().is_char_device() {
+        return Err("virtio evidence port is not a character device".into());
+    }
     serde_json::to_writer(&mut port, evidence).map_err(|_| "cannot serialize guest evidence")?;
     port.write_all(b"\n")
         .map_err(|_| "cannot write guest evidence")?;
@@ -95,7 +97,7 @@ fn collect(
     state_root: &Path,
     package_version: Option<String>,
 ) -> Result<GuestEvidence, String> {
-    let os_release = parse_os_release(&read_small(&root.join("etc/os-release"))?);
+    let os_release = parse_os_release(&read_small(&root.join("usr/lib/os-release"))?);
     let product_release = read_small(&root.join("usr/lib/lyra-os/product-release"))?;
     let installation_uuid = read_small(&root.join("sys/class/dmi/id/product_uuid"))?.to_lowercase();
     let boot_id = read_small(&root.join("proc/sys/kernel/random/boot_id"))?.to_lowercase();
@@ -235,10 +237,11 @@ mod tests {
         fs::create_dir_all(root.join("sys/class/dmi/id")).unwrap();
         fs::create_dir_all(root.join("proc/sys/kernel/random")).unwrap();
         fs::write(
-            root.join("etc/os-release"),
+            root.join("usr/lib/os-release"),
             "ID=lyra-os\nVERSION_ID=1.0-alpha.7\nPRETTY_NAME=secret\n",
         )
         .unwrap();
+        symlink("../usr/lib/os-release", root.join("etc/os-release")).unwrap();
         fs::write(
             root.join("usr/lib/lyra-os/product-release"),
             "LYRA_VERSION_ID='1.0'\nLYRA_EDITION='desktop'\nLYRA_ARCHITECTURE='x86_64'\nLYRA_BUILD_ID='lyra-release-1.0'\n",
@@ -261,6 +264,7 @@ mod tests {
         assert_eq!(json["release"]["version_id"], "1.0");
         assert_eq!(json["release"]["build_id"], "lyra-release-1.0");
         assert!(json.to_string().find("secret").is_none());
+        assert!(read_small(&root.join("etc/os-release")).is_err());
 
         let target = root.join("uuid-target");
         fs::write(&target, "12345678-1234-4234-8234-123456789abc").unwrap();
@@ -303,6 +307,10 @@ mod tests {
         assert!(emit_to_virtio(&evidence, &root.join("absent")).is_ok());
         fs::write(root.join("regular"), b"").unwrap();
         assert!(emit_to_virtio(&evidence, &root.join("regular")).is_err());
+        symlink(root.join("regular"), root.join("regular-link")).unwrap();
+        assert!(emit_to_virtio(&evidence, &root.join("regular-link")).is_err());
+        symlink("/dev/null", root.join("character-link")).unwrap();
+        assert!(emit_to_virtio(&evidence, &root.join("character-link")).is_ok());
         fs::remove_dir_all(root).unwrap();
     }
 }
