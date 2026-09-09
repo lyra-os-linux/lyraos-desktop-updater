@@ -89,10 +89,10 @@ pub const fn failure_state(error: &ExecutionError, has_snapshot: bool) -> Operat
     }
 }
 
-struct TransactionLock(std::fs::File);
+pub(crate) struct TransactionLock(std::fs::File);
 
 impl TransactionLock {
-    fn acquire() -> Result<Self, ExecutionError> {
+    pub(crate) fn acquire() -> Result<Self, ExecutionError> {
         Self::acquire_at(std::path::Path::new("/run/lock/lyra-upgrade.lock"))
     }
 

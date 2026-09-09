@@ -5,3 +5,5 @@ pub mod planner;
 pub mod repository_context;
 pub mod solver_xml;
 pub mod vendor_metadata;
+
+pub mod recovery;

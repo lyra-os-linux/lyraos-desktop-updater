@@ -81,3 +81,13 @@ Para update sem necessidade de reboot, `Applying` pode seguir diretamente para
 Cancelamento nunca envia sinal assíncrono para interromper RPM/libzypp no meio
 de uma transação. A implementação deve injetar cada falha da matriz em testes
 antes de promover a funcionalidade.
+
+## Resultado de recuperação
+
+`NeedsRecovery` pode registrar um objetivo `recovery` antes do comando
+Snapper. Só avança para `AwaitingReboot` quando o clone selecionado para boot
+foi identificado e persistido. Após o boot, `VerifyingBoot` verifica a origem
+e o clone esperado; sucesso termina em `Completed`/`rollback-verified`, sem
+consumir a sequência do manifesto do upgrade que falhou. Uma intenção
+incompleta permanece em recuperação para diagnóstico, sem repetição cega.
+Ver [contrato e qualificação de rollback](rollback-qualification.md).

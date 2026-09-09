@@ -102,6 +102,7 @@ fn main() {
         plan_sha256: plan.sha256().unwrap(),
         manifest_sha256: Some(manifest_hash),
         snapshot_number: Some(snapshot_number),
+        recovery: None,
         last_completed_step: None,
         error_code: None,
         boot_verification: None,

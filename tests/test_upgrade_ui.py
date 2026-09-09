@@ -92,9 +92,35 @@ class UpgradeUiContractTests(unittest.TestCase):
         # A pinned dark scheme would leave native controls dark on a light desktop.
         self.assertNotIn("color-scheme: dark;", preview)
 
+    def test_completed_rollback_is_rendered_as_restored_in_each_locale(self) -> None:
+        script = r"""
+const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
+const app = fs.readFileSync('ui/app.js', 'utf8');
+const context = {window: {}, state: {}, renderPhases: () => {}};
+const nodes = {};
+context.document = {querySelector: id => nodes[id] ||= {style: {}}};
+vm.createContext(context);
+vm.runInContext(fs.readFileSync('ui/i18n.js', 'utf8'), context);
+vm.runInContext(app.slice(app.indexOf('const progress='), app.indexOf('function request(')), context);
+vm.runInContext(app.slice(app.indexOf('function updateState('), app.indexOf('function renderPhases(')), context);
+for (const [locale, restored] of Object.entries({'en-US':'System restored', 'pt-BR':'Sistema restaurado', 'es-ES':'Sistema restaurado'})) {
+  context.t = key => context.window.LYRA_UPGRADE_CATALOGS[locale][key];
+  vm.runInContext('updateState("Completed", true)', context);
+  assert.equal(nodes['#operation-title'].textContent, restored);
+  assert.equal(nodes['#state-pill'].textContent, restored);
+  vm.runInContext('updateState("Completed", false)', context);
+  assert.equal(nodes['#operation-title'].textContent, context.t('completed'));
+  vm.runInContext('updateState("VerifyingBoot", true)', context);
+  assert.equal(nodes['#operation-title'].textContent, context.t('verifying'));
+}
+"""
+        result = subprocess.run(['node', '-e', script], cwd=ROOT, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_new_interface_keys_exist_in_all_catalogs(self) -> None:
         catalog = (UPGRADE / "ui/i18n.js").read_text(encoding="utf-8")
         for key in (
+            "recovered",
             "restart",
             "rollback",
             "keep_current",

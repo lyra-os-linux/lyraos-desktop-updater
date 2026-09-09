@@ -211,6 +211,17 @@ struct ParsedRelease {
     build_id: String,
 }
 
+pub fn release_identity_at(root: &Path) -> Result<ReleaseIdentity, DiscoverError> {
+    let release =
+        parse_release(&SystemBackend.read(&root.join("usr/lib/lyra-os/product-release"))?)?;
+    Ok(ReleaseIdentity {
+        version: release.version,
+        edition: "desktop".into(),
+        architecture: release.architecture,
+        build_id: release.build_id,
+    })
+}
+
 fn parse_release(content: &str) -> Result<ParsedRelease, DiscoverError> {
     let version =
         parse_assignment(content, "LYRA_VERSION_ID").ok_or(DiscoverError::InvalidRelease)?;

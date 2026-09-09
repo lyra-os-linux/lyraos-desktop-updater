@@ -23,6 +23,7 @@ enum CheckFailure {
     Grub,
     Timeout,
     Worker,
+    Rollback,
 }
 
 impl CheckFailure {
@@ -38,6 +39,7 @@ impl CheckFailure {
             Self::Grub => "POST_BOOT_GRUB_FAILED",
             Self::Timeout => "POST_BOOT_VERIFICATION_TIMEOUT",
             Self::Worker => "POST_BOOT_WORKER_FAILED",
+            Self::Rollback => "POST_BOOT_ROLLBACK_IDENTITY_FAILED",
         }
     }
 
@@ -58,6 +60,7 @@ impl CheckFailure {
             Some(15) => Some(Self::BootTarget),
             Some(16) => Some(Self::FailedUnits),
             Some(17) => Some(Self::Grub),
+            Some(20) => Some(Self::Rollback),
             Some(124 | 137) => Some(Self::Timeout),
             _ => Some(Self::Worker),
         }
@@ -154,7 +157,9 @@ fn finalize_verification(
 ) {
     state.sequence = state.sequence.saturating_add(1);
     if passed {
-        if state.operation == lyra_upgrade_core::OperationKind::ReleaseUpgrade {
+        if state.recovery.is_none()
+            && state.operation == lyra_upgrade_core::OperationKind::ReleaseUpgrade
+        {
             let persisted = read_manifest_sequence(operation_dir)
                 .ok_or(())
                 .and_then(|sequence| write_sequence(sequence_path, sequence).map_err(|_| ()));
@@ -167,7 +172,14 @@ fn finalize_verification(
         }
         state.state = OperationState::Completed;
         state.boot_verification = Some(BootVerification::Passed);
-        state.last_completed_step = Some("post-boot-verification".into());
+        state.last_completed_step = Some(
+            if state.recovery.is_some() {
+                "rollback-verified"
+            } else {
+                "post-boot-verification"
+            }
+            .into(),
+        );
         state.error_code = None;
     } else {
         state.state = OperationState::NeedsRecovery;
@@ -198,12 +210,10 @@ fn pending_operation() -> Option<(PathBuf, lyra_upgrade_core::OperationStateReco
 
 fn verify(state: &lyra_upgrade_core::OperationStateRecord) -> Result<(), CheckFailure> {
     let facts = discover_host(&SystemBackend).map_err(|_| CheckFailure::Discovery)?;
-    if let Some(target) = &state.target
-        && (facts.release.version != target.version
-            || facts.release.edition != target.edition
-            || facts.release.architecture != target.architecture)
-    {
-        return Err(CheckFailure::Identity);
+    verify_release(state, &facts.release)?;
+    if let Some(goal) = &state.recovery {
+        lyra_upgrade_core::recovery::verify_rollback_boot(goal)
+            .map_err(|_| CheckFailure::Rollback)?;
     }
     if facts.root_filesystem != "btrfs" || !facts.snapper_root_configured {
         return Err(CheckFailure::Filesystem);
@@ -238,6 +248,32 @@ fn verify(state: &lyra_upgrade_core::OperationStateRecord) -> Result<(), CheckFa
     }
     if !run("test", &["-s", "/boot/grub2/grub.cfg"]) {
         return Err(CheckFailure::Grub);
+    }
+    Ok(())
+}
+
+fn verify_release(
+    state: &lyra_upgrade_core::OperationStateRecord,
+    actual: &lyra_upgrade_core::ReleaseIdentity,
+) -> Result<(), CheckFailure> {
+    if state.recovery.is_some() {
+        if actual != &state.source {
+            return Err(CheckFailure::Identity);
+        }
+    } else if state
+        .last_completed_step
+        .as_deref()
+        .is_some_and(|step| step.starts_with("rollback-"))
+    {
+        // Legacy scheduled rollbacks have no recorded boot identity. Do not
+        // reinterpret them as successful upgrades after installing this reader.
+        return Err(CheckFailure::Rollback);
+    } else if let Some(target) = &state.target
+        && (actual.version != target.version
+            || actual.edition != target.edition
+            || actual.architecture != target.architecture)
+    {
+        return Err(CheckFailure::Identity);
     }
     Ok(())
 }
@@ -349,12 +385,80 @@ mod tests {
             plan_sha256: "0".repeat(64),
             manifest_sha256: None,
             snapshot_number: Some(42),
+            recovery: None,
             last_completed_step: None,
             error_code: None,
             boot_verification: Some(BootVerification::Pending),
             created_at: "2026-08-31T00:00:00Z".into(),
             updated_at: "2026-08-31T00:00:00Z".into(),
         }
+    }
+
+    fn recovered_state() -> OperationStateRecord {
+        use lyra_upgrade_core::recovery::{RollbackGoal, SubvolumeIdentity};
+        let mut result = state(OperationKind::ReleaseUpgrade);
+        result.target = Some(ReleaseIdentity {
+            version: "2.0".into(),
+            build_id: "target".into(),
+            ..result.source.clone()
+        });
+        let source = SubvolumeIdentity {
+            id: 258,
+            uuid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into(),
+            parent_uuid: None,
+        };
+        result.recovery = Some(RollbackGoal {
+            source_snapshot_number: 42,
+            source_snapshot: source.clone(),
+            boot_snapshot: Some(SubvolumeIdentity {
+                id: 260,
+                uuid: "bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee".into(),
+                parent_uuid: Some(source.uuid),
+            }),
+        });
+        result
+    }
+
+    #[test]
+    fn rollback_checks_full_source_identity_and_rejects_legacy_intent() {
+        let mut value = recovered_state();
+        assert_eq!(super::verify_release(&value, &value.source), Ok(()));
+        assert_eq!(
+            super::verify_release(&value, value.target.as_ref().unwrap()),
+            Err(CheckFailure::Identity)
+        );
+        let mut wrong_build = value.source.clone();
+        wrong_build.build_id = "other".into();
+        assert_eq!(
+            super::verify_release(&value, &wrong_build),
+            Err(CheckFailure::Identity)
+        );
+        value.recovery = None;
+        value.last_completed_step = Some("rollback-scheduled".into());
+        assert_eq!(
+            super::verify_release(&value, &value.source),
+            Err(CheckFailure::Rollback)
+        );
+    }
+
+    #[test]
+    fn restored_release_does_not_advance_the_upgrade_replay_sequence() {
+        let root =
+            std::env::temp_dir().join(format!("lyra-verifier-rollback-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let sequence = root.join("sequence");
+        fs::write(&sequence, "7\n").unwrap();
+        fs::write(root.join("manifest.json"), r#"{"sequence":8}"#).unwrap();
+        let mut value = recovered_state();
+        finalize_verification(&mut value, &root, &sequence, true);
+        assert_eq!(value.state, OperationState::Completed);
+        assert_eq!(
+            value.last_completed_step.as_deref(),
+            Some("rollback-verified")
+        );
+        assert_eq!(fs::read_to_string(&sequence).unwrap(), "7\n");
+        assert!(value.recovery.is_some());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

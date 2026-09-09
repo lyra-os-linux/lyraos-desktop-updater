@@ -25,6 +25,7 @@ BuildRequires:  pkgconfig(javascriptcoregtk-4.1)
 BuildRequires:  pkgconfig(webkit2gtk-4.1)
 BuildRequires:  rust >= 1.85
 BuildRequires:  zstd
+Requires:       btrfsprogs
 Requires:       curl
 Requires:       coreutils
 Requires:       dracut
@@ -57,6 +58,7 @@ test -s %{SOURCE2}
 %{cargo_build}
 
 %install
+install -Dm0644 packaging/recovery-format %{buildroot}/usr/lib/lyra-upgrade/recovery-format
 install -Dm0755 target/release/lyra-upgrade \
     %{buildroot}%{_bindir}/lyra-upgrade
 install -Dm0755 target/release/lyra-upgrade-service \
@@ -114,6 +116,8 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/org.lyraos.LyraUpgrad
 %systemd_postun_with_restart lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service
 
 %files
+%dir /usr/lib/lyra-upgrade
+/usr/lib/lyra-upgrade/recovery-format
 %license LICENSE
 %doc README.md
 %{_bindir}/lyra-upgrade
