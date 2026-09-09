@@ -1,5 +1,7 @@
+mod pending;
+
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 use lyra_upgrade_core::{
@@ -85,7 +87,31 @@ fn main() {
         eprintln!("lyra-upgrade-verify: invalid arguments");
         std::process::exit(2);
     }
-    let Some((operation_dir, mut state)) = pending_operation() else {
+    let scan = match pending::pending_operation(Path::new(STATE_ROOT), |entry, reason| {
+        eprintln!(
+            "lyra-upgrade-verify: POST_BOOT_STATE_ENTRY_INVALID entry=\"{entry}\" reason={reason}"
+        );
+    }) {
+        Ok(scan) => scan,
+        Err(error) => {
+            eprintln!(
+                "lyra-upgrade-verify: POST_BOOT_STATE_SCAN_FAILED reason={:?}",
+                error.kind()
+            );
+            std::process::exit(1);
+        }
+    };
+    let incomplete_scan = scan.invalid_entries != 0;
+    if incomplete_scan {
+        eprintln!(
+            "lyra-upgrade-verify: POST_BOOT_STATE_SCAN_INCOMPLETE invalid_entries={}",
+            scan.invalid_entries
+        );
+    }
+    let Some((operation_dir, mut state)) = scan.operation else {
+        if incomplete_scan {
+            std::process::exit(1);
+        }
         return;
     };
     if state.state == OperationState::AwaitingReboot {
@@ -116,7 +142,7 @@ fn main() {
         eprintln!("lyra-upgrade-verify: {}", error.code());
     }
     persist(&state);
-    if state.state != OperationState::Completed {
+    if state.state != OperationState::Completed || incomplete_scan {
         std::process::exit(1);
     }
 }
@@ -186,26 +212,6 @@ fn finalize_verification(
         state.boot_verification = Some(BootVerification::Failed);
         state.error_code = Some("POST_BOOT_VERIFICATION_FAILED".into());
     }
-}
-
-fn pending_operation() -> Option<(PathBuf, lyra_upgrade_core::OperationStateRecord)> {
-    let mut candidates = Vec::new();
-    for entry in fs::read_dir(STATE_ROOT).ok()? {
-        let entry = entry.ok()?;
-        if !entry.file_type().ok()?.is_dir() {
-            continue;
-        }
-        let operation_id = entry.file_name().into_string().ok()?;
-        let state = load_state(Path::new(STATE_ROOT), &operation_id).ok()?;
-        if matches!(
-            state.state,
-            OperationState::AwaitingReboot | OperationState::VerifyingBoot
-        ) {
-            candidates.push((entry.path(), state));
-        }
-    }
-    candidates.sort_by(|left, right| right.1.updated_at.cmp(&left.1.updated_at));
-    candidates.into_iter().next()
 }
 
 fn verify(state: &lyra_upgrade_core::OperationStateRecord) -> Result<(), CheckFailure> {
