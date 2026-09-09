@@ -23,7 +23,7 @@ pub use preflight::{
 pub use sanitize::{SanitizedLine, sanitize_technical_line};
 pub use solver::{
     PackageAction, PackageChange, SolverPolicy, SolverResult, VendorTransition,
-    evaluate_solver_preflight,
+    evaluate_solver_preflight, valid_vendor, vendor_policy_blockers,
 };
 
 use serde::{Deserialize, Serialize};

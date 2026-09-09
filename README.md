@@ -37,3 +37,8 @@ O adaptador usa o XML estruturado do solver do zypper em modo dry-run. O
 contrato bloqueia downgrade, remoção não autorizada, troca de vendor não
 aprovada e quebra de pacotes lockstep. Antes da execução, o serviço atualiza os
 metadados e exige que o hash do novo plano seja idêntico ao plano confirmado.
+
+Os fornecedores são identificados pelo cabeçalho RPM instalado e pelo registro
+RPM-MD da versão, arquitetura e repositório propostos. Identidades ausentes ou
+ambíguas bloqueiam a operação. Consulte
+[as fixtures e a qualificação nativa](service/tests/fixtures/vendor-policy/README.md).

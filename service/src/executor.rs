@@ -7,7 +7,12 @@ use lyra_upgrade_core::{
 };
 
 use crate::manifest_fetch::{FetchError, fetch_repository_key};
-use crate::planner::{PlannerError, plan_update_with_cached_metadata};
+use crate::planner::{
+    PlannerError, check_confirmed_release_plan, plan_update_with_cached_metadata,
+    revalidate_release_plan,
+};
+use crate::solver_xml::parse_solver_xml;
+use crate::vendor_metadata::enrich_solver_vendors;
 use lyra_upgrade_protocol::PlannedUpdate;
 
 const ZYPPER_UPDATE_POLICY: &[&str] = &[
@@ -129,6 +134,8 @@ pub fn stage_release_upgrade(
     {
         return Err(ExecutionError::PlanChanged);
     }
+    check_confirmed_release_plan(manifest, &confirmed.plan, &state.plan_sha256)
+        .map_err(revalidation_error)?;
     let operation_dir = state_root.join(&state.operation_id);
     let repos_dir = operation_dir.join("repos.d");
     let cache_dir = operation_dir.join("cache");
@@ -199,9 +206,34 @@ pub fn stage_release_upgrade(
     if observer.cancel_requested() {
         return Err(ExecutionError::Cancelled);
     }
+    let mut dry_run_args = common.to_vec();
+    dry_run_args.extend([
+        "--xmlout",
+        "--no-refresh",
+        "dist-upgrade",
+        "--dry-run",
+        "--details",
+        "--no-allow-downgrade",
+        "--no-allow-name-change",
+        "--no-allow-arch-change",
+        "--allow-vendor-change",
+    ]);
+    let dry_run = require_success("zypper", run_observed("zypper", &dry_run_args, observer))
+        .map_err(ExecutionError::Download)?;
+    revalidate_staged_solver(
+        &dry_run.stdout,
+        &raw_dir,
+        manifest,
+        confirmed,
+        &state.plan_sha256,
+    )?;
+    if observer.cancel_requested() {
+        return Err(ExecutionError::Cancelled);
+    }
     let mut download_args = common.to_vec();
     download_args.extend([
         "--xmlout",
+        "--no-refresh",
         "dist-upgrade",
         "--download-only",
         "--details",
@@ -211,7 +243,14 @@ pub fn stage_release_upgrade(
         "--allow-vendor-change",
     ]);
     let download = run_observed("zypper", &download_args, observer);
-    require_success("zypper", download).map_err(ExecutionError::Download)?;
+    let download = require_success("zypper", download).map_err(ExecutionError::Download)?;
+    revalidate_staged_solver(
+        &download.stdout,
+        &raw_dir,
+        manifest,
+        confirmed,
+        &state.plan_sha256,
+    )?;
     if observer.cancel_requested() {
         return Err(ExecutionError::Cancelled);
     }
@@ -567,6 +606,35 @@ impl OutputText for Output {
     fn stdout(&self) -> String {
         String::from_utf8_lossy(&self.stdout).into_owned()
     }
+}
+
+fn revalidation_error(error: PlannerError) -> ExecutionError {
+    match error {
+        PlannerError::PlanChanged => ExecutionError::PlanChanged,
+        _ => ExecutionError::Replan(error),
+    }
+}
+
+fn revalidate_staged_solver(
+    xml: &[u8],
+    raw: &std::path::Path,
+    manifest: &ReleaseManifest,
+    confirmed: &PlannedUpdate,
+    expected_hash: &str,
+) -> Result<(), ExecutionError> {
+    let facts = lyra_upgrade_core::discover_host(&lyra_upgrade_core::SystemBackend)
+        .map_err(|error| revalidation_error(PlannerError::Discovery(error)))?;
+    let aliases = manifest
+        .repositories
+        .iter()
+        .map(|repo| repo.alias.clone())
+        .collect();
+    let mut solver = parse_solver_xml(&String::from_utf8_lossy(xml), aliases, 0)
+        .map_err(|error| revalidation_error(PlannerError::SolverXml(error)))?;
+    enrich_solver_vendors(&mut solver, raw)
+        .map_err(|error| revalidation_error(PlannerError::VendorMetadata(error)))?;
+    revalidate_release_plan(&facts, &solver, manifest, &confirmed.plan, expected_hash)
+        .map_err(revalidation_error)
 }
 
 #[cfg(test)]

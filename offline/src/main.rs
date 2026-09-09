@@ -4,10 +4,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
 use lyra_upgrade_core::{
-    OperationState, PreflightPolicy, ReleaseManifest, SystemBackend, UpgradePlan, build_plan,
-    discover_host, evaluate_solver_preflight, load_state, save_state,
+    OperationState, ReleaseManifest, SystemBackend, UpgradePlan, discover_host, load_state,
+    save_state,
 };
+use lyra_upgrade_service::planner::{check_confirmed_release_plan, revalidate_release_plan};
 use lyra_upgrade_service::solver_xml::parse_solver_xml;
+use lyra_upgrade_service::vendor_metadata::enrich_solver_vendors;
 use sha2::{Digest, Sha256};
 
 const STATE_ROOT: &str = "/var/lib/lyra-upgrade/operations";
@@ -43,7 +45,6 @@ fn run() -> Result<(), String> {
     }
 
     save_state(Path::new(STATE_ROOT), &state).map_err(|_| "cannot persist offline state")?;
-    install_repository_set(&manifest, operation_id)?;
     revalidate_plan(
         &operation_dir,
         &manifest,
@@ -51,15 +52,11 @@ fn run() -> Result<(), String> {
         &state.plan_sha256,
     )?;
 
-    let packages = operation_dir.join("cache/packages");
-    let output = command(
-        "zypper",
+    install_repository_set(&manifest, operation_id)?;
+
+    let output = release_command(
+        &operation_dir,
         &[
-            "--xmlout",
-            "--non-interactive",
-            "--no-refresh",
-            "--pkg-cache-dir",
-            packages.to_str().ok_or("non-UTF8 package cache")?,
             "dist-upgrade",
             "--details",
             "--no-allow-downgrade",
@@ -67,7 +64,7 @@ fn run() -> Result<(), String> {
             "--no-allow-arch-change",
             "--allow-vendor-change",
         ],
-    );
+    )?;
     if !matches!(output.status.code(), Some(0 | 102 | 103)) {
         return Err(format!(
             "zypper dup failed: {}",
@@ -109,17 +106,11 @@ fn revalidate_plan(
     confirmed: &UpgradePlan,
     expected_hash: &str,
 ) -> Result<(), String> {
-    let dry_run = command(
-        "zypper",
+    check_confirmed_release_plan(manifest, confirmed, expected_hash)
+        .map_err(|error| format!("offline confirmed policy blocked: {error:?}"))?;
+    let dry_run = release_command(
+        operation_dir,
         &[
-            "--xmlout",
-            "--non-interactive",
-            "--no-refresh",
-            "--pkg-cache-dir",
-            operation_dir
-                .join("cache/packages")
-                .to_str()
-                .ok_or("non-UTF8 package cache")?,
             "dist-upgrade",
             "--dry-run",
             "--details",
@@ -128,7 +119,7 @@ fn revalidate_plan(
             "--no-allow-arch-change",
             "--allow-vendor-change",
         ],
-    );
+    )?;
     if !dry_run.status.success() {
         return Err("offline dry-run failed".into());
     }
@@ -138,30 +129,30 @@ fn revalidate_plan(
         .iter()
         .map(|repository| repository.alias.clone())
         .collect();
-    let solver = parse_solver_xml(&String::from_utf8_lossy(&dry_run.stdout), metadata, 0)
+    let mut solver = parse_solver_xml(&String::from_utf8_lossy(&dry_run.stdout), metadata, 0)
         .map_err(|_| "cannot parse offline solver result")?;
-    let report = evaluate_solver_preflight(
-        &facts,
-        PreflightPolicy::default(),
-        &solver,
-        &manifest.solver_policy(),
-    );
-    if !report.passed() {
-        return Err("offline preflight blocked".into());
+    enrich_solver_vendors(&mut solver, &operation_dir.join("cache/raw"))
+        .map_err(|error| format!("offline vendor identity unavailable: {error:?}"))?;
+    revalidate_release_plan(&facts, &solver, manifest, confirmed, expected_hash)
+        .map_err(|error| format!("offline plan blocked: {error:?}"))
+}
+
+// Both solver and application use the same staged repository/cache set.
+fn release_command(operation_dir: &Path, arguments: &[&str]) -> Result<Output, String> {
+    let paths = [
+        ("--reposd-dir", "repos.d"),
+        ("--cache-dir", "cache"),
+        ("--raw-cache-dir", "cache/raw"),
+        ("--solv-cache-dir", "cache/solv"),
+        ("--pkg-cache-dir", "cache/packages"),
+    ]
+    .map(|(flag, path)| (flag, operation_dir.join(path)));
+    let mut args = vec!["--xmlout", "--non-interactive", "--no-refresh"];
+    for (flag, path) in &paths {
+        args.extend([*flag, path.to_str().ok_or("non-UTF8 stage path")?]);
     }
-    let rebuilt = build_plan(
-        lyra_upgrade_core::OperationKind::ReleaseUpgrade,
-        &facts,
-        &report,
-        Some(manifest.target.clone()),
-        confirmed.manifest_sha256.clone(),
-        &solver,
-    )
-    .map_err(|_| "cannot rebuild offline plan")?;
-    if rebuilt.sha256().map_err(|_| "cannot hash offline plan")? != expected_hash {
-        return Err("offline plan differs from confirmed plan".into());
-    }
-    Ok(())
+    args.extend_from_slice(arguments);
+    Ok(command("zypper", &args))
 }
 
 fn install_repository_set(manifest: &ReleaseManifest, operation_id: &str) -> Result<(), String> {

@@ -7,6 +7,9 @@ pub enum SolverXmlError {
     Xml(quick_xml::Error),
     InvalidNumber(&'static str),
     MissingSummary,
+    InvalidPackage(&'static str),
+    ConflictingPackage,
+    ArchitectureChange,
 }
 
 impl From<quick_xml::Error> for SolverXmlError {
@@ -22,66 +25,89 @@ pub fn parse_solver_xml(
 ) -> Result<SolverResult, SolverXmlError> {
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);
-    let mut current_action = None;
-    let mut changes = Vec::new();
+    let mut path: Vec<Vec<u8>> = Vec::new();
+    let mut changes = std::collections::BTreeMap::new();
     let mut problems = Vec::new();
     let mut summary = None;
     let mut in_error_message = false;
 
     loop {
-        match reader.read_event()? {
-            Event::Start(element) => match element.name().as_ref() {
-                b"install-summary" => summary = Some(parse_summary(&reader, &element)?),
-                b"to-install" => current_action = Some(PackageAction::Install),
-                b"to-remove" => current_action = Some(PackageAction::Remove),
-                b"to-upgrade" | b"to-upgrade-change-arch" => {
-                    current_action = Some(PackageAction::Upgrade)
+        let event = reader.read_event()?;
+        match &event {
+            Event::Start(element) | Event::Empty(element) => {
+                let name = element.name();
+                if name.as_ref() == b"install-summary" {
+                    if summary.is_some() || path.as_slice() != [b"stream".to_vec()] {
+                        return Err(SolverXmlError::InvalidPackage(
+                            "duplicate or misplaced summary",
+                        ));
+                    }
+                    summary = Some(parse_summary(&reader, element)?);
                 }
-                b"to-downgrade" | b"to-downgrade-change-arch" => {
-                    current_action = Some(PackageAction::Downgrade)
+                if name.as_ref() == b"solvable"
+                    && path.len() == 3
+                    && path[1] == b"install-summary"
+                    && let Some(action) = section_action(&path[2])
+                    && let Some(change) = parse_solvable(&reader, element, action)?
+                {
+                    let key = (
+                        change.name.clone(),
+                        change.architecture.clone(),
+                        change.current_version.clone(),
+                        change.proposed_version.clone(),
+                        change.repository_alias.clone(),
+                    );
+                    let existing = changes.entry(key).or_insert_with(|| change.clone());
+                    if existing.action != change.action {
+                        if existing.action == PackageAction::Reinstall {
+                            existing.action = change.action;
+                        } else if change.action != PackageAction::Reinstall {
+                            return Err(SolverXmlError::ConflictingPackage);
+                        }
+                    }
                 }
-                b"to-reinstall" | b"to-change-arch" => {
-                    current_action = Some(PackageAction::Reinstall)
-                }
-                b"solvable" if current_action.is_some() => {
-                    changes.push(parse_solvable(&reader, &element, current_action.unwrap())?)
-                }
-                b"message" => {
+                if name.as_ref() == b"message" {
                     in_error_message =
-                        attribute(&reader, &element, b"type")?.is_some_and(|kind| kind == "error")
+                        attribute(&reader, element, b"type")?.is_some_and(|kind| kind == "error");
+                    if in_error_message {
+                        problems.push("zypper reported an error".into());
+                    }
                 }
-                _ => {}
-            },
+                if matches!(event, Event::Start(_)) {
+                    if path.len() >= 32 {
+                        return Err(SolverXmlError::InvalidPackage("excessive nesting"));
+                    }
+                    path.push(name.as_ref().to_vec());
+                }
+            }
             Event::Text(text) if in_error_message => {
                 let value = text.decode().map_err(quick_xml::Error::Encoding)?;
-                let value = value.trim();
-                if !value.is_empty() {
-                    problems.push(value.to_string());
+                if !value.trim().is_empty() {
+                    problems.push(value.trim().to_string());
                 }
             }
-            Event::Empty(element)
-                if element.name().as_ref() == b"solvable" && current_action.is_some() =>
-            {
-                changes.push(parse_solvable(&reader, &element, current_action.unwrap())?)
+            Event::End(element) => {
+                path.pop();
+                if element.name().as_ref() == b"message" {
+                    in_error_message = false;
+                }
             }
-            Event::End(element) => match element.name().as_ref() {
-                b"to-install"
-                | b"to-remove"
-                | b"to-upgrade"
-                | b"to-downgrade"
-                | b"to-upgrade-change-arch"
-                | b"to-downgrade-change-arch"
-                | b"to-reinstall"
-                | b"to-change-arch" => current_action = None,
-                b"message" => in_error_message = false,
-                _ => {}
-            },
+            Event::DocType(_) => return Err(SolverXmlError::InvalidPackage("DTD not allowed")),
             Event::Eof => break,
             _ => {}
         }
     }
-
     let summary = summary.ok_or(SolverXmlError::MissingSummary)?;
+    let mut changes: Vec<PackageChange> = changes.into_values().collect();
+    if !path.is_empty()
+        || changes.len() as u64 != summary.packages_to_change
+        || changes.iter().any(|change| {
+            change.action == PackageAction::Reinstall
+                && change.current_version != change.proposed_version
+        })
+    {
+        return Err(SolverXmlError::ConflictingPackage);
+    }
     changes.sort();
     problems.sort();
     problems.dedup();
@@ -98,7 +124,19 @@ pub fn parse_solver_xml(
     })
 }
 
+fn section_action(section: &[u8]) -> Option<PackageAction> {
+    match section {
+        b"to-install" => Some(PackageAction::Install),
+        b"to-remove" => Some(PackageAction::Remove),
+        b"to-upgrade" | b"to-upgrade-change-arch" => Some(PackageAction::Upgrade),
+        b"to-downgrade" | b"to-downgrade-change-arch" => Some(PackageAction::Downgrade),
+        b"to-reinstall" | b"to-change-arch" | b"to-change-vendor" => Some(PackageAction::Reinstall),
+        _ => None,
+    }
+}
+
 struct Summary {
+    packages_to_change: u64,
     download_bytes: u64,
     space_usage_diff: i64,
     snapshot_bytes: u64,
@@ -110,6 +148,7 @@ fn parse_summary(
     element: &BytesStart<'_>,
 ) -> Result<Summary, SolverXmlError> {
     Ok(Summary {
+        packages_to_change: required_number(reader, element, b"packages-to-change")?,
         download_bytes: required_number(reader, element, b"download-size")?,
         space_usage_diff: required_signed_number(reader, element, b"space-usage-diff")?,
         snapshot_bytes: required_number(reader, element, b"space-usage-installed")?
@@ -123,20 +162,56 @@ fn parse_solvable(
     reader: &Reader<&[u8]>,
     element: &BytesStart<'_>,
     action: PackageAction,
-) -> Result<PackageChange, SolverXmlError> {
-    Ok(PackageChange {
-        name: attribute(reader, element, b"name")?.unwrap_or_default(),
-        architecture: attribute(reader, element, b"arch")?.unwrap_or_default(),
+) -> Result<Option<PackageChange>, SolverXmlError> {
+    match attribute(reader, element, b"type")?.as_deref() {
+        Some("pattern" | "product" | "patch" | "application") => return Ok(None),
+        Some("package") => {}
+        _ => return Err(SolverXmlError::InvalidPackage("unsupported solvable type")),
+    }
+    let name = attribute(reader, element, b"name")?
+        .filter(|value| !value.is_empty())
+        .ok_or(SolverXmlError::InvalidPackage("name"))?;
+    let architecture = attribute(reader, element, b"arch")?
+        .filter(|value| !value.is_empty())
+        .ok_or(SolverXmlError::InvalidPackage("architecture"))?;
+    if attribute(reader, element, b"arch-old")?.is_some_and(|old| old != architecture) {
+        // The v1 contract cannot identify the old architecture. Never guess
+        // an installed package when the transaction violates our arch policy.
+        return Err(SolverXmlError::ArchitectureChange);
+    }
+    let version = attribute(reader, element, b"edition")?
+        .filter(|value| !value.is_empty())
+        .ok_or(SolverXmlError::InvalidPackage("edition"))?;
+    let old = attribute(reader, element, b"edition-old")?;
+    let (current_version, proposed_version) = match action {
+        PackageAction::Remove => (Some(version), None),
+        PackageAction::Install => (None, Some(version)),
+        PackageAction::Reinstall => (
+            Some(old.ok_or(SolverXmlError::InvalidPackage("edition-old"))?),
+            Some(version),
+        ),
+        _ => (
+            Some(old.ok_or(SolverXmlError::InvalidPackage("edition-old"))?),
+            Some(version),
+        ),
+    };
+    Ok(Some(PackageChange {
+        name,
+        architecture,
         action,
-        current_version: attribute(reader, element, b"edition-old")?,
-        proposed_version: attribute(reader, element, b"edition")?,
+        current_version,
+        proposed_version,
         current_vendor: None,
         proposed_vendor: None,
-        repository_alias: attribute(reader, element, b"repository")?,
+        repository_alias: if action == PackageAction::Remove {
+            None
+        } else {
+            attribute(reader, element, b"repository")?
+        },
         download_bytes: 0,
         installed_size_before: 0,
         installed_size_after: 0,
-    })
+    }))
 }
 
 fn required_number(
@@ -181,8 +256,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn vendor_only_change_is_not_lost() {
+        let xml = r#"<stream><install-summary download-size="4096" space-usage-diff="0" space-usage-installed="4096" space-usage-removed="4096" packages-to-change="1"><to-change-vendor><solvable type="package" name="critical-package" edition="1-1" edition-old="1-1" arch="x86_64" arch-old="x86_64" repository="repo-target"/></to-change-vendor></install-summary></stream>"#;
+        let result = parse_solver_xml(xml, vec!["repo-target".into()], 0).unwrap();
+        assert_eq!(result.changes.len(), 1);
+        assert_eq!(result.changes[0].action, PackageAction::Reinstall);
+        assert_eq!(result.changes[0].current_version.as_deref(), Some("1-1"));
+    }
+
+    #[test]
     fn parses_dry_run_summary_and_changes() {
-        let xml = r#"<?xml version='1.0'?><stream><install-summary download-size="4096" space-usage-diff="2048" space-usage-installed="2048" space-usage-removed="0" packages-to-change="1" need-restart="false" need-reboot="true"><to-upgrade><solvable status="other-version" kind="package" name="firefox" edition="2" edition-old="1" arch="x86_64" repository="repo-oss"/></to-upgrade></install-summary></stream>"#;
+        let xml = r#"<?xml version='1.0'?><stream><install-summary download-size="4096" space-usage-diff="2048" space-usage-installed="2048" space-usage-removed="0" packages-to-change="1" need-restart="false" need-reboot="true"><to-upgrade><solvable status="other-version" type="package" name="firefox" edition="2" edition-old="1" arch="x86_64" repository="repo-oss"/></to-upgrade></install-summary></stream>"#;
         let result = parse_solver_xml(xml, vec!["repo-oss".into()], 8192).unwrap();
         assert!(result.successful);
         assert_eq!(result.download_bytes, 4096);
