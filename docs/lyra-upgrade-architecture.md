@@ -169,6 +169,23 @@ arquivos de repositório escritos por pacotes, não há rollback automático:
 Boot completo, Secure Boot e reconstrução real de initramfs/GRUB continuam
 sendo gates independentes.
 
+### Fatos vinculados ao plano de versão
+
+| Entrada | Origem e regra entre planejamento e boot offline |
+| --- | --- |
+| Release de origem, filesystem e Secure Boot | Host instalado; mudanças alteram o plano. |
+| Release de destino e política | Manifesto confirmado, incluindo seu hash e piso de espaço. |
+| Repositórios e aliases válidos | Contexto preparado de destino em todas as fases. Repositórios ativos da origem, inclusive terceiros desabilitados, não são usados pelo solver de destino. |
+| Bloqueios e órfãos | Bloqueios locais e inventário consultado com os repositórios de destino; mensagens de progresso não participam. |
+| Versão, arquitetura, fornecedor e ação dos RPMs | Solver atual comparado ao plano confirmado; mudanças reais continuam recusadas. |
+| Espaço disponível, bateria, RPMDB e Snapper | Preflight atualizado a cada fase; não são congelados para liberar execução. |
+| `required_bytes` | A estimativa atual precisa caber no disco e respeitar o piso do manifesto. Só depois disso o hash reutiliza o valor confirmado, pois o download já em cache reduz a necessidade restante. |
+
+O conjunto ativo da origem é preservado até a aplicação e guardado no backup
+ao publicar o destino. A VM exercita aliases de origem/destino diferentes,
+terceiros desabilitados e um piso de espaço maior que a estimativa do solver;
+o teste Rust recusa espaço um byte abaixo do piso e mudança de versão do RPM.
+
 ## Política de comandos privilegiados
 
 O executor contém operações fechadas, equivalentes a:
