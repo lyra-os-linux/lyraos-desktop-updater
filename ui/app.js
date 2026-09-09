@@ -35,7 +35,7 @@ function updateState(name,recovered=false){
   renderPhases(name);
 }
 function renderPhases(active){document.querySelector("#phases").innerHTML=phases.map(name=>`<li class="${name===active?"active":(progress[name]??0)<(progress[active]??0)?"done":""}"><span></span>${escapeHtml(t(`phase_${name}`))}</li>`).join("");}
-function addEvents(items){for(const event of items||[]){if(state.events.some(old=>old.sequence===event.sequence))continue;state.events.push(event);state.lastSequence=Math.max(state.lastSequence,event.sequence);}state.events.sort((a,b)=>a.sequence-b.sequence);renderDetails();}
+function addEvents(items){for(const event of items||[]){if(event.sequence===0){state.events=state.events.filter(old=>old.sequence!==0||old.message_id!==event.message_id);}else if(state.events.some(old=>old.sequence===event.sequence))continue;state.events.push(event);state.lastSequence=Math.max(state.lastSequence,event.sequence);}state.events.sort((a,b)=>a.sequence-b.sequence);renderDetails();}
 function renderDetails(){
   const query=document.querySelector("#search").value.toLowerCase(); const filter=document.querySelector("#filter").value;
   const visible=state.events.filter(event=>(filter==="all"||event.level?.toLowerCase()===filter)&&JSON.stringify(event).toLowerCase().includes(query));

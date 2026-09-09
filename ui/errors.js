@@ -1,6 +1,8 @@
 (() => {
   const messages = {
     "en-US": {
+      error_EVENT_LOG_READ_FAILED: "Some operation details could not be read. The available history is shown; the update state is unchanged.",
+      error_EVENT_LOG_WRITE_FAILED: "Some operation details could not be saved. Keep this window open to retain the available details.",
       error_SNAPSHOT_RECOVERY_UNSUPPORTED: "This snapshot predates automatic recovery verification. Use administrative recovery.",
       error_ROLLBACK_INTENT_INCOMPLETE: "Rollback preparation was interrupted. Review the boot selection before trying recovery again.",
       error_ROLLBACK_RESULT_INVALID: "Rollback preparation was interrupted. Review the boot selection before trying recovery again.",
@@ -23,6 +25,8 @@
       error_UNKNOWN: "Lyra Upgrade could not communicate with the update service."
     },
     "pt-BR": {
+      error_EVENT_LOG_READ_FAILED: "Não foi possível ler parte dos detalhes da operação. O histórico disponível é exibido; o estado da atualização não mudou.",
+      error_EVENT_LOG_WRITE_FAILED: "Não foi possível salvar parte dos detalhes da operação. Mantenha esta janela aberta para preservar os detalhes disponíveis.",
       error_SNAPSHOT_RECOVERY_UNSUPPORTED: "Este snapshot é anterior à verificação automática de recuperação. Use a recuperação administrativa.",
       error_ROLLBACK_INTENT_INCOMPLETE: "A preparação do rollback foi interrompida. Revise a seleção de boot antes de tentar recuperar novamente.",
       error_ROLLBACK_RESULT_INVALID: "A preparação do rollback foi interrompida. Revise a seleção de boot antes de tentar recuperar novamente.",
@@ -45,6 +49,8 @@
       error_UNKNOWN: "O Lyra Upgrade não conseguiu se comunicar com o serviço de atualização."
     },
     "es-ES": {
+      error_EVENT_LOG_READ_FAILED: "No se pudo leer parte de los detalles de la operación. Se muestra el historial disponible; el estado de la actualización no cambió.",
+      error_EVENT_LOG_WRITE_FAILED: "No se pudo guardar parte de los detalles de la operación. Mantén esta ventana abierta para conservar los detalles disponibles.",
       error_SNAPSHOT_RECOVERY_UNSUPPORTED: "Esta instantánea es anterior a la verificación automática de recuperación. Usa la recuperación administrativa.",
       error_ROLLBACK_INTENT_INCOMPLETE: "Se interrumpió la preparación de la restauración. Revisa la selección de arranque antes de intentar recuperar de nuevo.",
       error_ROLLBACK_RESULT_INVALID: "Se interrumpió la preparación de la restauración. Revisa la selección de arranque antes de intentar recuperar de nuevo.",
