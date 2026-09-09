@@ -11,6 +11,7 @@ use crate::planner::{
     PlannerError, check_confirmed_release_plan, plan_update_with_cached_metadata,
     revalidate_release_plan,
 };
+use crate::repository_context::{PreparedDiscovery, RepositoryContext};
 use crate::solver_xml::parse_solver_xml;
 use crate::vendor_metadata::enrich_solver_vendors;
 use lyra_upgrade_protocol::PlannedUpdate;
@@ -137,14 +138,12 @@ pub fn stage_release_upgrade(
     check_confirmed_release_plan(manifest, &confirmed.plan, &state.plan_sha256)
         .map_err(revalidation_error)?;
     let operation_dir = state_root.join(&state.operation_id);
-    let repos_dir = operation_dir.join("repos.d");
-    let cache_dir = operation_dir.join("cache");
-    let raw_dir = cache_dir.join("raw");
-    let solv_dir = cache_dir.join("solv");
-    let packages_dir = cache_dir.join("packages");
+    let context = RepositoryContext::prepared(&operation_dir);
+    let repos_dir = &context.repos;
+    let packages_dir = &context.packages;
     let keys_dir = operation_dir.join("keys");
-    fs::create_dir_all(&repos_dir).map_err(ExecutionError::Stage)?;
-    fs::create_dir_all(&packages_dir).map_err(ExecutionError::Stage)?;
+    fs::create_dir_all(repos_dir).map_err(ExecutionError::Stage)?;
+    fs::create_dir_all(packages_dir).map_err(ExecutionError::Stage)?;
     fs::create_dir_all(&keys_dir).map_err(ExecutionError::Stage)?;
     for repository in &manifest.repositories {
         let key_path = keys_dir.join(format!("{}.asc", repository.alias));
@@ -176,29 +175,13 @@ pub fn stage_release_upgrade(
         .transition_to(OperationState::Downloading)
         .map_err(ExecutionError::Transition)?;
     persist(state_root, state, observer)?;
-    let common = [
-        "--non-interactive",
-        "--reposd-dir",
-        repos_dir.to_str().ok_or_else(|| {
-            ExecutionError::Stage(std::io::Error::other("non-UTF8 repository path"))
-        })?,
-        "--cache-dir",
-        cache_dir
-            .to_str()
-            .ok_or_else(|| ExecutionError::Stage(std::io::Error::other("non-UTF8 cache path")))?,
-        "--raw-cache-dir",
-        raw_dir.to_str().ok_or_else(|| {
-            ExecutionError::Stage(std::io::Error::other("non-UTF8 raw cache path"))
-        })?,
-        "--solv-cache-dir",
-        solv_dir.to_str().ok_or_else(|| {
-            ExecutionError::Stage(std::io::Error::other("non-UTF8 solv cache path"))
-        })?,
-        "--pkg-cache-dir",
-        packages_dir.to_str().ok_or_else(|| {
-            ExecutionError::Stage(std::io::Error::other("non-UTF8 package cache path"))
-        })?,
-    ];
+    let context_args = context.arguments();
+    let mut common = vec!["--non-interactive"];
+    for argument in &context_args {
+        common.push(argument.to_str().ok_or_else(|| {
+            ExecutionError::Stage(std::io::Error::other("non-UTF8 repository/cache path"))
+        })?);
+    }
     let mut refresh_args = common.to_vec();
     refresh_args.push("refresh");
     let refresh = run_observed("zypper", &refresh_args, observer);
@@ -222,7 +205,7 @@ pub fn stage_release_upgrade(
         .map_err(ExecutionError::Download)?;
     revalidate_staged_solver(
         &dry_run.stdout,
-        &raw_dir,
+        &context,
         manifest,
         confirmed,
         &state.plan_sha256,
@@ -246,7 +229,7 @@ pub fn stage_release_upgrade(
     let download = require_success("zypper", download).map_err(ExecutionError::Download)?;
     revalidate_staged_solver(
         &download.stdout,
-        &raw_dir,
+        &context,
         manifest,
         confirmed,
         &state.plan_sha256,
@@ -617,12 +600,12 @@ fn revalidation_error(error: PlannerError) -> ExecutionError {
 
 fn revalidate_staged_solver(
     xml: &[u8],
-    raw: &std::path::Path,
+    context: &RepositoryContext,
     manifest: &ReleaseManifest,
     confirmed: &PlannedUpdate,
     expected_hash: &str,
 ) -> Result<(), ExecutionError> {
-    let facts = lyra_upgrade_core::discover_host(&lyra_upgrade_core::SystemBackend)
+    let facts = lyra_upgrade_core::discover_host(&PreparedDiscovery { context })
         .map_err(|error| revalidation_error(PlannerError::Discovery(error)))?;
     let aliases = manifest
         .repositories
@@ -631,7 +614,7 @@ fn revalidate_staged_solver(
         .collect();
     let mut solver = parse_solver_xml(&String::from_utf8_lossy(xml), aliases, 0)
         .map_err(|error| revalidation_error(PlannerError::SolverXml(error)))?;
-    enrich_solver_vendors(&mut solver, raw)
+    enrich_solver_vendors(&mut solver, &context.raw)
         .map_err(|error| revalidation_error(PlannerError::VendorMetadata(error)))?;
     revalidate_release_plan(&facts, &solver, manifest, &confirmed.plan, expected_hash)
         .map_err(revalidation_error)

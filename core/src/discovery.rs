@@ -94,16 +94,7 @@ fn allowed_probe(program: &str, arguments: &[&str]) -> bool {
                 "zypper",
                 ["--non-interactive", "--no-refresh", "lr", "--details"]
             )
-            | (
-                "zypper",
-                [
-                    "--non-interactive",
-                    "--no-refresh",
-                    "locks",
-                    "--type",
-                    "package"
-                ]
-            )
+            | ("zypper", ["--non-interactive", "--no-refresh", "locks"])
             | (
                 "zypper",
                 [
@@ -131,6 +122,7 @@ pub enum DiscoverError {
     InvalidRepository(String),
     InvalidPowerState,
     InvalidPackageManagerState,
+    InvalidPackageInventory,
 }
 
 pub fn discover_host(backend: &impl DiscoveryBackend) -> Result<HostFacts, DiscoverError> {
@@ -151,25 +143,22 @@ pub fn discover_host(backend: &impl DiscoveryBackend) -> Result<HostFacts, Disco
     let (on_battery, battery_percent) = discover_power(backend)?;
     let secure_boot_enabled = discover_secure_boot(backend);
     let repositories = discover_repositories(backend)?;
-    let held_packages = lines_of_successful(backend.run(
-        "zypper",
-        &[
-            "--non-interactive",
-            "--no-refresh",
-            "locks",
-            "--type",
-            "package",
-        ],
-    )?);
-    let orphaned_packages = lines_of_successful(backend.run(
-        "zypper",
-        &[
-            "--non-interactive",
-            "--no-refresh",
-            "packages",
-            "--orphaned",
-        ],
-    )?);
+    let held_packages = package_inventory(
+        backend.run("zypper", &["--non-interactive", "--no-refresh", "locks"])?,
+        InventoryKind::Locks,
+    )?;
+    let orphaned_packages = package_inventory(
+        backend.run(
+            "zypper",
+            &[
+                "--non-interactive",
+                "--no-refresh",
+                "packages",
+                "--orphaned",
+            ],
+        )?,
+        InventoryKind::Orphans,
+    )?;
 
     Ok(HostFacts {
         release: ReleaseIdentity {
@@ -365,20 +354,77 @@ fn successful_stdout(
         .ok_or(DiscoverError::CommandFailed(command))
 }
 
-fn lines_of_successful(output: CommandOutput) -> Vec<String> {
-    if !output.success {
-        return Vec::new();
-    }
-    let mut values: Vec<_> = output
-        .stdout
+enum InventoryKind {
+    Locks,
+    Orphans,
+}
+
+// Zypper's packages command emits a table even with --xmlout. Only table
+// records are identities: cache-building/progress messages must never enter
+// the confirmed plan, and a failed probe must not become an empty inventory.
+fn package_inventory(
+    output: CommandOutput,
+    kind: InventoryKind,
+) -> Result<Vec<String>, DiscoverError> {
+    let stdout = successful_stdout(output, "zypper-inventory")?;
+    let (header, empty, name_index) = match kind {
+        InventoryKind::Locks => (
+            ["#", "Name", "Type", "Repository", "Comment"],
+            "There are no package locks defined.",
+            1,
+        ),
+        InventoryKind::Orphans => (
+            ["S", "Repository", "Name", "Version", "Arch"],
+            "No packages found.",
+            2,
+        ),
+    };
+    let mut table = false;
+    let mut empty_seen = false;
+    let mut values = Vec::new();
+    for line in stdout
         .lines()
         .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with('-') && !line.contains('|'))
-        .map(str::to_string)
-        .collect();
+        .filter(|line| !line.is_empty())
+    {
+        if line == empty {
+            empty_seen = true;
+            continue;
+        }
+        let fields: Vec<_> = line.splitn(5, '|').map(str::trim).collect();
+        if fields == header {
+            if table {
+                return Err(DiscoverError::InvalidPackageInventory);
+            }
+            table = true;
+            continue;
+        }
+        if !table || line.bytes().all(|byte| matches!(byte, b'-' | b'+')) {
+            continue;
+        }
+        if fields.len() != 5
+            || fields[name_index].is_empty()
+            || fields[name_index].chars().any(char::is_control)
+        {
+            return Err(DiscoverError::InvalidPackageInventory);
+        }
+        let valid = match kind {
+            InventoryKind::Locks => fields[0].parse::<usize>().is_ok_and(|value| value > 0),
+            InventoryKind::Orphans => {
+                fields[0].starts_with('i') && !fields[3].is_empty() && !fields[4].is_empty()
+            }
+        };
+        if !valid {
+            return Err(DiscoverError::InvalidPackageInventory);
+        }
+        values.push(fields[name_index].to_owned());
+    }
+    if (!table && !empty_seen) || (empty_seen && !values.is_empty()) {
+        return Err(DiscoverError::InvalidPackageInventory);
+    }
     values.sort();
     values.dedup();
-    values
+    Ok(values)
 }
 
 #[cfg(test)]
@@ -450,12 +496,12 @@ mod tests {
                 "1 | repo-lyra | Lyra | Yes | Yes | Yes | 1 | rpm-md | https://example.invalid\n",
             ),
             (
-                "zypper --non-interactive --no-refresh locks --type package",
-                "",
+                "zypper --non-interactive --no-refresh locks",
+                "There are no package locks defined.\n",
             ),
             (
                 "zypper --non-interactive --no-refresh packages --orphaned",
-                "",
+                "No packages found.\n",
             ),
         ] {
             fixture.commands.insert(
@@ -479,6 +525,83 @@ mod tests {
         assert_eq!(facts.secure_boot_enabled, Some(true));
         assert_eq!(facts.repositories.len(), 1);
         assert!(!facts.repositories[0].metadata_valid);
+    }
+
+    #[test]
+    fn inventory_ignores_cache_progress_but_keeps_actual_names_and_lock_patterns() {
+        let rows = "S | Repository | Name | Version | Arch\n--+--+--+--+--\ni+ | @System | orphan-package | 1-1 | noarch\n";
+        for progress in [
+            "",
+            "Building repository 'fixture' cache [....done]\nLoading repository data...\nReading installed packages...\n",
+        ] {
+            let values = package_inventory(
+                CommandOutput {
+                    success: true,
+                    stdout: format!("{progress}{rows}"),
+                },
+                InventoryKind::Orphans,
+            )
+            .unwrap();
+            assert_eq!(values, ["orphan-package"]);
+        }
+        let locks = "# | Name | Type | Repository | Comment\n--+--+--+--+--\n1 | kernel-* | package | (any) | retained | comment\n2 | nvidia-* | package | (any) | retained\n";
+        assert_eq!(
+            package_inventory(
+                CommandOutput {
+                    success: true,
+                    stdout: locks.into()
+                },
+                InventoryKind::Locks
+            )
+            .unwrap(),
+            ["kernel-*", "nvidia-*"]
+        );
+    }
+
+    #[test]
+    fn empty_inventory_requires_success_and_recognizable_output() {
+        assert!(
+            package_inventory(
+                CommandOutput {
+                    success: true,
+                    stdout: "There are no package locks defined.\n".into()
+                },
+                InventoryKind::Locks
+            )
+            .unwrap()
+            .is_empty()
+        );
+        assert!(
+            package_inventory(
+                CommandOutput {
+                    success: true,
+                    stdout: "Loading repository data...\nNo packages found.\n".into()
+                },
+                InventoryKind::Orphans
+            )
+            .unwrap()
+            .is_empty()
+        );
+        for (success, stdout) in [
+            (false, "No packages found."),
+            (true, ""),
+            (true, "Loading repository data..."),
+            (
+                true,
+                "S | Repository | Name | Version | Arch\ni+ | @System | broken\n",
+            ),
+        ] {
+            assert!(
+                package_inventory(
+                    CommandOutput {
+                        success,
+                        stdout: stdout.into()
+                    },
+                    InventoryKind::Orphans
+                )
+                .is_err()
+            );
+        }
     }
 
     #[test]

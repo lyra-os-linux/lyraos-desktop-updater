@@ -42,3 +42,7 @@ Os fornecedores são identificados pelo cabeçalho RPM instalado e pelo registro
 RPM-MD da versão, arquitetura e repositório propostos. Identidades ausentes ou
 ambíguas bloqueiam a operação. Consulte
 [as fixtures e a qualificação nativa](service/tests/fixtures/vendor-policy/README.md).
+
+A [qualificação offline em VM](docs/offline-cache-qualification.md) executa o
+worker real sem rede, verifica o cache preparado e a preservação dos
+repositórios em falhas anteriores à aplicação.

@@ -8,6 +8,7 @@ use lyra_upgrade_protocol::PlannedUpdate;
 use sha2::{Digest, Sha256};
 
 use crate::manifest_fetch::{FetchError, fetch_repository_key};
+use crate::repository_context::{PreparedDiscovery, RepositoryContext};
 use crate::solver_xml::{SolverXmlError, parse_solver_xml};
 use crate::vendor_metadata::{VendorMetadataError, enrich_solver_vendors};
 
@@ -93,18 +94,15 @@ pub fn plan_update_with_cached_metadata() -> Result<PlannedUpdate, PlannerError>
 }
 
 pub fn plan_release_upgrade(manifest: &ReleaseManifest) -> Result<PlannedUpdate, PlannerError> {
-    let facts = discover_host(&SystemBackend).map_err(PlannerError::Discovery)?;
     let simulation = tempfile::Builder::new()
         .prefix("lyra-upgrade-solver-")
         .tempdir()
         .map_err(PlannerError::Spawn)?;
-    let repos_dir = simulation.path().join("repos.d");
-    let cache_dir = simulation.path().join("cache");
-    let raw_dir = simulation.path().join("raw");
-    let solv_dir = simulation.path().join("solv");
-    let packages_dir = simulation.path().join("packages");
+    let context = RepositoryContext::prepared(simulation.path());
+    let repos_dir = &context.repos;
+    let raw_dir = &context.raw;
     let keys_dir = simulation.path().join("keys");
-    std::fs::create_dir_all(&repos_dir).map_err(PlannerError::Spawn)?;
+    std::fs::create_dir_all(repos_dir).map_err(PlannerError::Spawn)?;
     std::fs::create_dir_all(&keys_dir).map_err(PlannerError::Spawn)?;
     for repository in &manifest.repositories {
         let key_path = keys_dir.join(format!("{}.asc", repository.alias));
@@ -122,14 +120,7 @@ pub fn plan_release_upgrade(manifest: &ReleaseManifest) -> Result<PlannedUpdate,
         )
         .map_err(PlannerError::Spawn)?;
     }
-    let paths = SimulationPaths {
-        repos: &repos_dir,
-        cache: &cache_dir,
-        raw: &raw_dir,
-        solv: &solv_dir,
-        packages: &packages_dir,
-    };
-    let refresh = run_with_simulation(&paths, &["refresh"])?;
+    let refresh = run_with_simulation(&context, &["refresh"])?;
     if !refresh.status.success() {
         return Err(PlannerError::SolverExit {
             code: refresh.status.code(),
@@ -137,7 +128,7 @@ pub fn plan_release_upgrade(manifest: &ReleaseManifest) -> Result<PlannedUpdate,
         });
     }
     let dry_run = run_with_simulation(
-        &paths,
+        &context,
         &[
             "--xmlout",
             "--no-refresh",
@@ -156,6 +147,8 @@ pub fn plan_release_upgrade(manifest: &ReleaseManifest) -> Result<PlannedUpdate,
             stderr: String::from_utf8_lossy(&dry_run.stderr).into_owned(),
         });
     }
+    let facts =
+        discover_host(&PreparedDiscovery { context: &context }).map_err(PlannerError::Discovery)?;
     let metadata = manifest
         .repositories
         .iter()
@@ -163,7 +156,7 @@ pub fn plan_release_upgrade(manifest: &ReleaseManifest) -> Result<PlannedUpdate,
         .collect();
     let mut solver = parse_solver_xml(&String::from_utf8_lossy(&dry_run.stdout), metadata, 0)
         .map_err(PlannerError::SolverXml)?;
-    enrich_solver_vendors(&mut solver, &raw_dir).map_err(PlannerError::VendorMetadata)?;
+    enrich_solver_vendors(&mut solver, raw_dir).map_err(PlannerError::VendorMetadata)?;
     let preflight = evaluate_solver_preflight(
         &facts,
         PreflightPolicy {
@@ -198,35 +191,14 @@ pub fn plan_release_upgrade(manifest: &ReleaseManifest) -> Result<PlannedUpdate,
     })
 }
 
-struct SimulationPaths<'a> {
-    repos: &'a std::path::Path,
-    cache: &'a std::path::Path,
-    raw: &'a std::path::Path,
-    solv: &'a std::path::Path,
-    packages: &'a std::path::Path,
-}
-
 fn run_with_simulation(
-    paths: &SimulationPaths<'_>,
+    context: &RepositoryContext,
     arguments: &[&str],
 ) -> Result<std::process::Output, PlannerError> {
-    Command::new("zypper")
+    context
+        .command()
         .arg("--non-interactive")
-        .arg("--reposd-dir")
-        .arg(paths.repos)
-        .arg("--cache-dir")
-        .arg(paths.cache)
-        .arg("--raw-cache-dir")
-        .arg(paths.raw)
-        .arg("--solv-cache-dir")
-        .arg(paths.solv)
-        .arg("--pkg-cache-dir")
-        .arg(paths.packages)
         .args(arguments)
-        .env_clear()
-        .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
-        .env("LC_ALL", "C")
-        .stdin(Stdio::null())
         .output()
         .map_err(PlannerError::Spawn)
 }

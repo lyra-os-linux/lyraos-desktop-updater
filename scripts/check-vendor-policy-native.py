@@ -26,6 +26,7 @@ def run(args, *, env=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--export-vm', action='store_true', help='Export only fixture RPMs, public keys and the private RPM database for an offline VM')
     args = parser.parse_args()
     # Root capabilities must be confined to a user namespace, not host root.
     uid_map = Path('/proc/self/uid_map').read_text().split()
@@ -67,6 +68,11 @@ printf fixture > %{{buildroot}}/usr/share/lyra-vendor-fixture/data
         run(['gpg', '--homedir', gpg, '--batch', '--passphrase', '', '--quick-generate-key',
              'Lyra Vendor Fixture <fixture@invalid.test>', 'ed25519', 'sign', '0'])
         key = run(['gpg', '--homedir', gpg, '--armor', '--export'])
+        if args.export_vm:
+            fingerprint = run(['gpg', '--homedir', gpg, '--with-colons', '--list-keys']).decode().split('fpr:::::::::')[1].split(':')[0]
+            for rpm in rpms.values():
+                run(['rpmsign', '--define', f'_gpg_name {fingerprint}', '--define', f'_gpg_path {gpg}', '--addsign', rpm])
+
         for scenario, tag, version in [('vendor-only', 'same', '1'), ('upgrade-vendor', 'new', '2')]:
             case = output / scenario
             case.mkdir(exist_ok=False)
@@ -116,6 +122,14 @@ printf fixture > %{{buildroot}}/usr/share/lyra-vendor-fixture/data
                 (cache / name).write_bytes((root / 'var/cache/zypp/raw/fixture/repodata' / name).read_bytes())
             for name in ['repomd.xml.asc', 'repomd.xml.key']:
                 (case / name).write_bytes((repo / 'repodata' / name).read_bytes())
+
+            if args.export_vm:
+                import shutil
+                shutil.copytree(root / 'usr/lib/sysimage/rpm', case / 'rpmdb')
+                shutil.copytree(root / 'var/cache/zypp', case / 'zypp-cache', symlinks=True)
+                (case / 'candidate.rpm').write_bytes(rpm.read_bytes())
+                (case / 'candidate-filename.txt').write_text(rpm.name + '\n')
+                (case / 'old.rpm').write_bytes(rpms['old'].read_bytes())
             # The native dry-run must not have applied the candidate.
             assert run(['rpm', '--root', root, '-q', '--queryformat', '%{VENDOR}', 'lyra-vendor-fixture']) == b'Lyra Fixture A'
             print(f'PASS {scenario}: signed refresh, actual solver XML, unchanged private RPM database', flush=True)
