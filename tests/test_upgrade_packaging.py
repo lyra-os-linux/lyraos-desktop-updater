@@ -92,6 +92,12 @@ class UpgradePackagingTests(unittest.TestCase):
         self.assertNotIn("groupadd -r lyra-upgrade", spec)
         offline = (PACKAGING / "lyra-upgrade-offline.service").read_text(encoding="utf-8")
         self.assertIn("PrivateNetwork=yes", offline)
+        verifier = (PACKAGING / "lyra-upgrade-verify.service").read_text(encoding="utf-8")
+        self.assertIn("After=multi-user.target\n", verifier)
+        self.assertIn("TimeoutStartSec=200", verifier)
+        self.assertIn("TimeoutStopSec=10", verifier)
+        self.assertIn("KillMode=control-group", verifier)
+        self.assertNotIn("network-online.target", verifier)
 
     def test_zypp_refresh_policy_owns_created_directories(self) -> None:
         spec = (PACKAGING / "lyra-upgrade.spec").read_text(encoding="utf-8")

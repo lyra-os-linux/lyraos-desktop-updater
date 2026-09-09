@@ -8,21 +8,142 @@ use lyra_upgrade_core::{
 
 const STATE_ROOT: &str = "/var/lib/lyra-upgrade/operations";
 
+const CHECK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(i32)]
+enum CheckFailure {
+    Discovery = 10,
+    Identity,
+    Filesystem,
+    RpmDatabase,
+    Dependencies,
+    BootTarget,
+    FailedUnits,
+    Grub,
+    Timeout,
+    Worker,
+}
+
+impl CheckFailure {
+    fn code(self) -> &'static str {
+        match self {
+            Self::Discovery => "POST_BOOT_DISCOVERY_FAILED",
+            Self::Identity => "POST_BOOT_IDENTITY_FAILED",
+            Self::Filesystem => "POST_BOOT_FILESYSTEM_FAILED",
+            Self::RpmDatabase => "POST_BOOT_RPM_DATABASE_FAILED",
+            Self::Dependencies => "POST_BOOT_DEPENDENCIES_FAILED",
+            Self::BootTarget => "POST_BOOT_TARGET_NOT_ACTIVE",
+            Self::FailedUnits => "POST_BOOT_FAILED_UNITS",
+            Self::Grub => "POST_BOOT_GRUB_FAILED",
+            Self::Timeout => "POST_BOOT_VERIFICATION_TIMEOUT",
+            Self::Worker => "POST_BOOT_WORKER_FAILED",
+        }
+    }
+
+    fn from_status(status: std::process::ExitStatus) -> Option<Self> {
+        use std::os::unix::process::ExitStatusExt;
+        // GNU timeout may kill its own process group when TERM is ignored.
+        // Rust then reports a signal, while a shell reports status 137.
+        let code = status
+            .code()
+            .or_else(|| status.signal().map(|signal| 128 + signal));
+        match code {
+            Some(0) => None,
+            Some(10) => Some(Self::Discovery),
+            Some(11) => Some(Self::Identity),
+            Some(12) => Some(Self::Filesystem),
+            Some(13) => Some(Self::RpmDatabase),
+            Some(14) => Some(Self::Dependencies),
+            Some(15) => Some(Self::BootTarget),
+            Some(16) => Some(Self::FailedUnits),
+            Some(17) => Some(Self::Grub),
+            Some(124 | 137) => Some(Self::Timeout),
+            _ => Some(Self::Worker),
+        }
+    }
+}
+
 fn main() {
+    let arguments: Vec<_> = std::env::args().skip(1).collect();
+    if let [mode, id] = arguments.as_slice()
+        && mode == "--check-boot"
+    {
+        let result = load_state(Path::new(STATE_ROOT), id)
+            .map_err(|_| CheckFailure::Worker)
+            .and_then(|state| verify(&state));
+        if let Err(error) = result {
+            eprintln!("lyra-upgrade-verify: {}", error.code());
+            std::process::exit(error as i32);
+        }
+        return;
+    }
+    if !arguments.is_empty() {
+        eprintln!("lyra-upgrade-verify: invalid arguments");
+        std::process::exit(2);
+    }
     let Some((operation_dir, mut state)) = pending_operation() else {
         return;
     };
-    let passed = verify(&state);
+    if state.state == OperationState::AwaitingReboot {
+        state
+            .transition_to(OperationState::VerifyingBoot)
+            .expect("post-boot transition");
+    }
+    persist(&state);
+    // Supervise all probes, including discovery subprocesses. GNU timeout
+    // signals the whole process group, then kills it after a grace period.
+    // The parent remains alive to persist a recovery result on timeout.
+    let failure = std::env::current_exe()
+        .ok()
+        .and_then(|exe| {
+            bounded_status(&exe, &["--check-boot", &state.operation_id], CHECK_TIMEOUT).ok()
+        })
+        .map_or(Some(CheckFailure::Worker), |status| {
+            CheckFailure::from_status(status)
+        });
     finalize_verification(
         &mut state,
         &operation_dir,
         Path::new("/var/lib/lyra-upgrade/last-manifest-sequence"),
-        passed,
+        failure.is_none(),
     );
-    if let Err(error) = save_state(Path::new(STATE_ROOT), &state) {
+    if let Some(error) = failure {
+        state.error_code = Some(error.code().into());
+        eprintln!("lyra-upgrade-verify: {}", error.code());
+    }
+    persist(&state);
+    if state.state != OperationState::Completed {
+        std::process::exit(1);
+    }
+}
+
+fn persist(state: &lyra_upgrade_core::OperationStateRecord) {
+    if let Err(error) = save_state(Path::new(STATE_ROOT), state) {
         eprintln!("lyra-upgrade-verify: cannot persist verification result: {error:?}");
         std::process::exit(1);
     }
+}
+
+fn bounded_status(
+    program: &Path,
+    arguments: &[&str],
+    timeout: std::time::Duration,
+) -> std::io::Result<std::process::ExitStatus> {
+    Command::new("timeout")
+        .args([
+            "--signal=TERM",
+            "--kill-after=5s",
+            &format!("{}s", timeout.as_secs_f64()),
+        ])
+        .arg(program)
+        .args(arguments)
+        .env_clear()
+        .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
+        .env("LC_ALL", "C")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .status()
 }
 
 fn finalize_verification(
@@ -75,30 +196,50 @@ fn pending_operation() -> Option<(PathBuf, lyra_upgrade_core::OperationStateReco
     candidates.into_iter().next()
 }
 
-fn verify(state: &lyra_upgrade_core::OperationStateRecord) -> bool {
-    let Ok(facts) = discover_host(&SystemBackend) else {
-        return false;
-    };
+fn verify(state: &lyra_upgrade_core::OperationStateRecord) -> Result<(), CheckFailure> {
+    let facts = discover_host(&SystemBackend).map_err(|_| CheckFailure::Discovery)?;
     if let Some(target) = &state.target
         && (facts.release.version != target.version
             || facts.release.edition != target.edition
             || facts.release.architecture != target.architecture)
     {
-        return false;
+        return Err(CheckFailure::Identity);
     }
     if facts.root_filesystem != "btrfs" || !facts.snapper_root_configured {
-        return false;
+        return Err(CheckFailure::Filesystem);
     }
     if !run("rpm", &["--verifydb"]) {
-        return false;
+        return Err(CheckFailure::RpmDatabase);
     }
+    // Package verification semantics are qualified separately in audit #12.
     if !run("zypper", &["--non-interactive", "--no-refresh", "verify"]) {
-        return false;
+        return Err(CheckFailure::Dependencies);
     }
-    if !run("systemctl", &["is-system-running", "--wait"]) {
-        return false;
+    if !run("systemctl", &["is-active", "--quiet", "multi-user.target"]) {
+        return Err(CheckFailure::BootTarget);
     }
-    run("test", &["-s", "/boot/grub2/grub.cfg"])
+    let failed = Command::new("systemctl")
+        .args([
+            "--failed",
+            "--no-legend",
+            "--plain",
+            "--no-pager",
+            "list-units",
+        ])
+        .env_clear()
+        .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
+        .env("LC_ALL", "C")
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .map_err(|_| CheckFailure::FailedUnits)?;
+    if !failed.status.success() || !failed.stdout.iter().all(u8::is_ascii_whitespace) {
+        return Err(CheckFailure::FailedUnits);
+    }
+    if !run("test", &["-s", "/boot/grub2/grub.cfg"]) {
+        return Err(CheckFailure::Grub);
+    }
+    Ok(())
 }
 
 fn run(program: &str, arguments: &[&str]) -> bool {
@@ -147,12 +288,49 @@ fn write_sequence(path: &Path, sequence: u64) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{finalize_verification, read_manifest_sequence};
+    use super::{CheckFailure, bounded_status, finalize_verification, read_manifest_sequence};
     use lyra_upgrade_core::{
         BootVerification, OperationKind, OperationState, OperationStateRecord, ReleaseIdentity,
         STATE_SCHEMA_VERSION,
     };
     use std::fs;
+
+    #[test]
+    fn supervisor_preserves_probe_diagnosis_and_bounds_a_hung_process() {
+        use std::os::unix::process::ExitStatusExt;
+        use std::path::Path;
+        use std::time::{Duration, Instant};
+        let status = bounded_status(
+            Path::new("/bin/sh"),
+            &["-c", "exit 16"],
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        assert_eq!(
+            CheckFailure::from_status(status),
+            Some(CheckFailure::FailedUnits)
+        );
+        let start = Instant::now();
+        let status = bounded_status(
+            Path::new("/bin/sh"),
+            &["-c", "sleep 20"],
+            Duration::from_millis(100),
+        )
+        .unwrap();
+        assert_eq!(
+            CheckFailure::from_status(status),
+            Some(CheckFailure::Timeout)
+        );
+        assert!(start.elapsed() < Duration::from_secs(7));
+        assert_eq!(
+            CheckFailure::from_status(std::process::ExitStatus::from_raw(127 << 8)),
+            Some(CheckFailure::Worker)
+        );
+        assert_eq!(
+            CheckFailure::from_status(std::process::ExitStatus::from_raw(9)),
+            Some(CheckFailure::Timeout)
+        );
+    }
 
     fn state(kind: OperationKind) -> OperationStateRecord {
         OperationStateRecord {
