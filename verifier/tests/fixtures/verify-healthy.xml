@@ -1,0 +1,8 @@
+<?xml version='1.0'?>
+<stream>
+<message type="info">Loading repository data...</message>
+<message type="info">Reading installed packages...</message>
+<install-summary download-size="0" space-usage-diff="0" space-usage-installed="0" space-usage-removed="0" packages-to-change="0" need-restart="0" need-reboot="0">
+</install-summary>
+<message type="info">Dependencies of all installed packages are satisfied.</message>
+</stream>

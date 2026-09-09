@@ -1,0 +1,32 @@
+<?xml version='1.0'?>
+<stream>
+<message type="info">Loading repository data...</message>
+<message type="info">Reading installed packages...</message>
+<install-summary download-size="6458" space-usage-diff="7" space-usage-installed="7" space-usage-removed="0" packages-to-change="1" need-restart="0" need-reboot="0">
+<to-install>
+<solvable type="package" name="lyra-dependency-provider" edition="1-1" arch="noarch" repository="fixture" summary="Disposable post-boot dependency fixture">
+<description>Scriptless RPM installed exclusively in a disposable VM.</description></solvable>
+</to-install>
+</install-summary>
+<message type="info">Some of the dependencies of installed packages are broken. In order to fix these dependencies, the following actions need to be taken:</message>
+<prompt id="0">
+<text>Backend:  classic_rpmtrans --dry-run
+Continue?</text>
+<option default="1" value="y" desc="Yes, accept the summary and proceed with installation/removal of packages."/>
+<option value="n" desc="No, cancel the operation."/>
+<option value="v" desc="Toggle display of package versions."/>
+<option value="a" desc="Toggle display of package architectures."/>
+<option value="r" desc="Toggle display of repositories from which the packages will be installed."/>
+<option value="m" desc="Toggle display of package vendor names."/>
+<option value="d" desc="Toggle between showing all details and as few details as possible."/>
+<option value="g" desc="View the summary in pager."/>
+</prompt>
+<progress id="fileconflict-check" name="Checking for file conflicts:"/>
+<progress id="fileconflict-check" name="Checking for file conflicts:" value="0"/>
+<progress id="fileconflict-check" name="Checking for file conflicts: (1 skipped)" value="33"/>
+<progress id="fileconflict-check" name="Checking for file conflicts: (1 skipped)" done="1"/>
+<fileconflict-summary><message type="warning">1 package had to be excluded from file conflicts check because it is not yet download.</message>
+<message type="info">    Note: Checking for file conflicts requires not installed packages to be downloaded in advance in
+    order to access their file lists. See option &apos;--download-in-advance / --dry-run --download-only&apos;
+    in the zypper manual page for details.</message>
+</fileconflict-summary></stream>

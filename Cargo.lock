@@ -1849,6 +1849,7 @@ name = "lyra-upgrade-verify"
 version = "0.2.3"
 dependencies = [
  "lyra-upgrade-core",
+ "quick-xml 0.38.4",
  "serde_json",
 ]
 

@@ -18,7 +18,7 @@ def main():
     parser.add_argument('--log', type=Path, required=True)
     args = parser.parse_args()
     vm = SystemdVM('invalid-state', 'lyra-invalid-state-vm')
-    for name in ['sleep', 'false', 'true', 'test', 'timeout']:
+    for name in ['sleep', 'false', 'true', 'test', 'timeout', 'cat']:
         vm.tool(name)
     (vm.root/'usr/sbin').symlink_to('bin')
     (vm.root/'sbin').symlink_to('usr/bin')
@@ -34,6 +34,7 @@ def main():
     vm.put('/test/scenario', args.scenario)
     vm.put('/usr/lib/lyra-os/product-release', "LYRA_VERSION_ID='2.0'\nLYRA_ARCHITECTURE='x86_64'\nLYRA_BUILD_ID='target'\n")
     vm.put('/boot/grub2/grub.cfg', '# VM fixture; GRUB itself is outside this boot-wait gate\n')
+    vm.put('/test/dependencies-healthy.xml', (REPO/'verifier/tests/fixtures/verify-healthy.xml').read_text())
     probes = {
         'findmnt': 'echo btrfs',
         'snapper': 'exit 0',
@@ -43,7 +44,7 @@ def main():
   *"lr --details") echo '1 | repo-lyra | Lyra | Yes | Yes | No | 1 | rpm-md | https://fixture.invalid' ;;
   *"locks") echo 'There are no package locks defined.' ;;
   *"packages --orphaned") echo 'No packages found.' ;;
-  *"verify"*) exit 0 ;;
+  *"verify"*) cat /test/dependencies-healthy.xml ;;
   *) exit 99 ;;
 esac''',
     }
