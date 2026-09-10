@@ -1,3 +1,4 @@
+mod dependencies;
 mod pending;
 
 use std::fs;
@@ -227,8 +228,7 @@ fn verify(state: &lyra_upgrade_core::OperationStateRecord) -> Result<(), CheckFa
     if !run("rpm", &["--verifydb"]) {
         return Err(CheckFailure::RpmDatabase);
     }
-    // Package verification semantics are qualified separately in audit #12.
-    if !run("zypper", &["--non-interactive", "--no-refresh", "verify"]) {
+    if dependencies::verify().is_err() {
         return Err(CheckFailure::Dependencies);
     }
     if !run("systemctl", &["is-active", "--quiet", "multi-user.target"]) {

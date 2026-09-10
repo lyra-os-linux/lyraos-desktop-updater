@@ -1,0 +1,16 @@
+<?xml version='1.0'?>
+<stream>
+<message type="info">Loading repository data...</message>
+<message type="info">Reading installed packages...</message>
+<prompt id="1">
+<description>Problem: 1: nothing provides &apos;lyra-dependency-provider &gt;= 1&apos; needed by the installed lyra-dependency-consumer-1-1.noarch
+ Solution 1: deinstallation of lyra-dependency-consumer-1-1.noarch
+ Solution 2: break lyra-dependency-consumer-1-1.noarch by ignoring some of its dependencies
+</description>
+<text>Choose from above solutions by number or cancel</text>
+<option value="1" desc="Choose solution 1"/>
+<option value="2" desc="Choose solution 2"/>
+<option default="1" value="c" desc="Choose no solution and cancel."/>
+<option value="d" desc="Toggle show detailed conflict information."/>
+</prompt>
+</stream>
