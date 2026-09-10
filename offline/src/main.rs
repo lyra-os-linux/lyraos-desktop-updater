@@ -4,10 +4,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
 use lyra_upgrade_core::{
-    OperationState, ReleaseManifest, SystemBackend, UpgradePlan, discover_host, load_state,
-    save_state,
+    OperationState, ReleaseManifest, UpgradePlan, discover_host, load_state, save_state,
 };
 use lyra_upgrade_service::planner::{check_confirmed_release_plan, revalidate_release_plan};
+use lyra_upgrade_service::repository_context::{PreparedDiscovery, RepositoryContext};
 use lyra_upgrade_service::solver_xml::parse_solver_xml;
 use lyra_upgrade_service::vendor_metadata::enrich_solver_vendors;
 use sha2::{Digest, Sha256};
@@ -52,8 +52,6 @@ fn run() -> Result<(), String> {
         &state.plan_sha256,
     )?;
 
-    install_repository_set(&manifest, operation_id)?;
-
     let output = release_command(
         &operation_dir,
         &[
@@ -65,12 +63,15 @@ fn run() -> Result<(), String> {
             "--allow-vendor-change",
         ],
     )?;
-    if !matches!(output.status.code(), Some(0 | 102 | 103)) {
+    if !matches!(output.status.code(), Some(0 | 102)) {
         return Err(format!(
             "zypper dup failed: {}",
             String::from_utf8_lossy(&output.stderr)
         ));
     }
+    // Solve/apply against the prepared context while keeping the old active
+    // repository set available on every pre-application failure.
+    install_repository_set(&manifest, operation_id)?;
     require_success(
         command("dracut", &["--regenerate-all", "--force"]),
         "dracut",
@@ -123,7 +124,9 @@ fn revalidate_plan(
     if !dry_run.status.success() {
         return Err("offline dry-run failed".into());
     }
-    let facts = discover_host(&SystemBackend).map_err(|_| "offline discovery failed")?;
+    let context = RepositoryContext::prepared(operation_dir);
+    let facts = discover_host(&PreparedDiscovery { context: &context })
+        .map_err(|error| format!("offline discovery failed: {error:?}"))?;
     let metadata = manifest
         .repositories
         .iter()
@@ -139,20 +142,12 @@ fn revalidate_plan(
 
 // Both solver and application use the same staged repository/cache set.
 fn release_command(operation_dir: &Path, arguments: &[&str]) -> Result<Output, String> {
-    let paths = [
-        ("--reposd-dir", "repos.d"),
-        ("--cache-dir", "cache"),
-        ("--raw-cache-dir", "cache/raw"),
-        ("--solv-cache-dir", "cache/solv"),
-        ("--pkg-cache-dir", "cache/packages"),
-    ]
-    .map(|(flag, path)| (flag, operation_dir.join(path)));
-    let mut args = vec!["--xmlout", "--non-interactive", "--no-refresh"];
-    for (flag, path) in &paths {
-        args.extend([*flag, path.to_str().ok_or("non-UTF8 stage path")?]);
-    }
-    args.extend_from_slice(arguments);
-    Ok(command("zypper", &args))
+    RepositoryContext::prepared(operation_dir)
+        .command()
+        .args(["--xmlout", "--non-interactive", "--no-refresh"])
+        .args(arguments)
+        .output()
+        .map_err(|error| error.to_string())
 }
 
 fn install_repository_set(manifest: &ReleaseManifest, operation_id: &str) -> Result<(), String> {

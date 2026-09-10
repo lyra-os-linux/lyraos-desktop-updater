@@ -90,6 +90,8 @@ class UpgradePackagingTests(unittest.TestCase):
         self.assertIn("ExecStart=/usr/bin/lyra-upgrade-probe --emit-virtio", service)
         self.assertIn("ProtectSystem=strict", service)
         self.assertNotIn("groupadd -r lyra-upgrade", spec)
+        offline = (PACKAGING / "lyra-upgrade-offline.service").read_text(encoding="utf-8")
+        self.assertIn("PrivateNetwork=yes", offline)
 
     def test_zypp_refresh_policy_owns_created_directories(self) -> None:
         spec = (PACKAGING / "lyra-upgrade.spec").read_text(encoding="utf-8")

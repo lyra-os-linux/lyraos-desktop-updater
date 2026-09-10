@@ -146,10 +146,28 @@ A mesma allowlist exata e direcional vale no planejamento, antes/depois do
 download em staging e na revalidação offline. Manifesto e identidades dos
 pacotes continuam vinculados ao hash confirmado. O espaço restante é
 reavaliado em cada fase, mas a redução dos bytes a baixar após preencher o
-cache não altera a identidade da transação aprovada. O executor offline
-revalida usando os repositórios/caches preparados antes de trocar os
-repositórios ativos. A qualificação completa de aplicação/recuperação offline
-continua sendo um gate independente.
+cache não altera a identidade da transação aprovada.
+
+Na atualização de versão, solver e inventário usam o contexto de destino:
+`repos.d`, `cache`, `cache/raw`, `cache/solv` e `cache/packages` da operação.
+Isso inclui `packages --orphaned`, que precisa dos metadados mesmo com
+`--no-refresh`. O planejamento temporário usa a mesma disposição de diretórios;
+staging verifica novamente o plano após preparar esse contexto. Mensagens de
+progresso não são identidades de pacotes. Falhas de inventário bloqueiam a
+operação, e mudanças nos nomes de bloqueios/órfãos alteram o plano.
+
+O serviço offline usa `PrivateNetwork=yes`. Revalida e aplica os RPMs com o
+contexto preparado; só após uma aplicação bem-sucedida (código 0 ou 102)
+publica os repositórios de destino, preservando uma cópia do conjunto anterior.
+Assim, falhas de descoberta, metadados, preflight ou download de RPM ausente
+não provocam a troca antecipada de repositórios pelo atualizador. O código 103
+continua sendo falha. Se a aplicação de RPMs já alterou o sistema, incluindo
+arquivos de repositório escritos por pacotes, não há rollback automático:
+`NeedsRecovery` preserva o snapshot para recuperação explícita.
+
+[A qualificação em VM](offline-cache-qualification.md) cobre essa fronteira.
+Boot completo, Secure Boot e reconstrução real de initramfs/GRUB continuam
+sendo gates independentes.
 
 ## Política de comandos privilegiados
 
