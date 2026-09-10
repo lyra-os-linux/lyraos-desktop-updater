@@ -7,9 +7,11 @@ mod discovery;
 mod manifest;
 mod persistence;
 mod preflight;
+pub mod recovery;
 mod sanitize;
 mod solver;
 
+pub use discovery::release_identity_at;
 pub use discovery::{CommandOutput, DiscoverError, DiscoveryBackend, SystemBackend, discover_host};
 pub use manifest::{
     ManifestChannelPolicy, ManifestError, ReleaseManifest, RepositoryTransition,
@@ -114,6 +116,8 @@ pub struct OperationStateRecord {
     pub plan_sha256: String,
     pub manifest_sha256: Option<String>,
     pub snapshot_number: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery: Option<recovery::RollbackGoal>,
     pub last_completed_step: Option<String>,
     pub error_code: Option<String>,
     pub boot_verification: Option<BootVerification>,
@@ -214,6 +218,7 @@ mod tests {
             plan_sha256: "0".repeat(64),
             manifest_sha256: None,
             snapshot_number: None,
+            recovery: None,
             last_completed_step: None,
             error_code: None,
             boot_verification: None,

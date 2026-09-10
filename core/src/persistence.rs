@@ -75,6 +75,22 @@ pub fn load_state(
 }
 
 fn validate_state(state: &OperationStateRecord) -> Result<(), PersistenceError> {
+    if let Some(goal) = &state.recovery
+        && (!matches!(
+            state.state,
+            OperationState::NeedsRecovery
+                | OperationState::Failed
+                | OperationState::AwaitingReboot
+                | OperationState::VerifyingBoot
+                | OperationState::Completed
+        ) || !goal.valid(state.snapshot_number)
+            || (!matches!(
+                state.state,
+                OperationState::NeedsRecovery | OperationState::Failed
+            ) && goal.boot_snapshot.is_none()))
+    {
+        return Err(PersistenceError::InvalidState);
+    }
     if state.schema_version != STATE_SCHEMA_VERSION {
         return Err(PersistenceError::UnsupportedSchema);
     }
@@ -258,12 +274,52 @@ mod tests {
             plan_sha256: "0".repeat(64),
             manifest_sha256: None,
             snapshot_number: None,
+            recovery: None,
             last_completed_step: None,
             error_code: None,
             boot_verification: Some(BootVerification::Pending),
             created_at: "2026-08-18T00:00:00Z".into(),
             updated_at: "2026-08-18T00:00:00Z".into(),
         }
+    }
+
+    #[test]
+    fn legacy_state_remains_readable_but_incomplete_rollback_cannot_await_boot() {
+        use crate::recovery::{RollbackGoal, SubvolumeIdentity};
+        let root = temporary_root("recovery");
+        let mut value = state();
+        save_state(&root, &value).unwrap();
+        let path = root.join(&value.operation_id).join("state.json");
+        assert!(!fs::read_to_string(&path).unwrap().contains("recovery"));
+        assert!(
+            load_state(&root, &value.operation_id)
+                .unwrap()
+                .recovery
+                .is_none()
+        );
+        value.snapshot_number = Some(2);
+        value.state = OperationState::NeedsRecovery;
+        value.recovery = Some(RollbackGoal {
+            source_snapshot_number: 2,
+            source_snapshot: SubvolumeIdentity {
+                id: 258,
+                uuid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into(),
+                parent_uuid: None,
+            },
+            boot_snapshot: None,
+        });
+        save_state(&root, &value).unwrap();
+        assert!(
+            load_state(&root, &value.operation_id)
+                .unwrap()
+                .recovery
+                .is_some()
+        );
+        value.state = OperationState::AwaitingReboot;
+        assert!(save_state(&root, &value).is_err());
+        value.state = OperationState::Planned;
+        assert!(save_state(&root, &value).is_err());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

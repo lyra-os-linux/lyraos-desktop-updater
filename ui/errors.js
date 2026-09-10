@@ -1,6 +1,14 @@
 (() => {
   const messages = {
     "en-US": {
+      error_SNAPSHOT_RECOVERY_UNSUPPORTED: "This snapshot predates automatic recovery verification. Use administrative recovery.",
+      error_ROLLBACK_INTENT_INCOMPLETE: "Rollback preparation was interrupted. Review the boot selection before trying recovery again.",
+      error_ROLLBACK_RESULT_INVALID: "Rollback preparation was interrupted. Review the boot selection before trying recovery again.",
+      error_POST_BOOT_ROLLBACK_IDENTITY_FAILED: "The restored system does not match the expected snapshot or version.",
+      error_POST_BOOT_IDENTITY_FAILED: "The restored system does not match the expected snapshot or version.",
+      error_SNAPSHOT_IDENTITY_INVALID: "The restored system does not match the expected snapshot or version.",
+      error_SNAPSHOT_IDENTITY_MISMATCH: "The restored system does not match the expected snapshot or version.",
+      error_RECOVERY_STATE_NOT_PERSISTENT: "Recovery records must be stored outside the root snapshot.",
       error_AUTHORIZATION: "Authorization was cancelled or denied.",
       error_CONFIRMATION_REQUIRED: "Confirm the update before continuing.",
       error_DISCOVERY_FAILED: "Lyra could not inspect this system safely.",
@@ -15,6 +23,14 @@
       error_UNKNOWN: "Lyra Upgrade could not communicate with the update service."
     },
     "pt-BR": {
+      error_SNAPSHOT_RECOVERY_UNSUPPORTED: "Este snapshot é anterior à verificação automática de recuperação. Use a recuperação administrativa.",
+      error_ROLLBACK_INTENT_INCOMPLETE: "A preparação do rollback foi interrompida. Revise a seleção de boot antes de tentar recuperar novamente.",
+      error_ROLLBACK_RESULT_INVALID: "A preparação do rollback foi interrompida. Revise a seleção de boot antes de tentar recuperar novamente.",
+      error_POST_BOOT_ROLLBACK_IDENTITY_FAILED: "O sistema restaurado não corresponde ao snapshot ou à versão esperada.",
+      error_POST_BOOT_IDENTITY_FAILED: "O sistema restaurado não corresponde ao snapshot ou à versão esperada.",
+      error_SNAPSHOT_IDENTITY_INVALID: "O sistema restaurado não corresponde ao snapshot ou à versão esperada.",
+      error_SNAPSHOT_IDENTITY_MISMATCH: "O sistema restaurado não corresponde ao snapshot ou à versão esperada.",
+      error_RECOVERY_STATE_NOT_PERSISTENT: "Os registros de recuperação precisam ficar fora do snapshot da raiz.",
       error_AUTHORIZATION: "A autorização foi cancelada ou negada.",
       error_CONFIRMATION_REQUIRED: "Confirme a atualização antes de continuar.",
       error_DISCOVERY_FAILED: "O Lyra não conseguiu inspecionar este sistema com segurança.",
@@ -29,6 +45,14 @@
       error_UNKNOWN: "O Lyra Upgrade não conseguiu se comunicar com o serviço de atualização."
     },
     "es-ES": {
+      error_SNAPSHOT_RECOVERY_UNSUPPORTED: "Esta instantánea es anterior a la verificación automática de recuperación. Usa la recuperación administrativa.",
+      error_ROLLBACK_INTENT_INCOMPLETE: "Se interrumpió la preparación de la restauración. Revisa la selección de arranque antes de intentar recuperar de nuevo.",
+      error_ROLLBACK_RESULT_INVALID: "Se interrumpió la preparación de la restauración. Revisa la selección de arranque antes de intentar recuperar de nuevo.",
+      error_POST_BOOT_ROLLBACK_IDENTITY_FAILED: "El sistema restaurado no coincide con la instantánea o la versión esperada.",
+      error_POST_BOOT_IDENTITY_FAILED: "El sistema restaurado no coincide con la instantánea o la versión esperada.",
+      error_SNAPSHOT_IDENTITY_INVALID: "El sistema restaurado no coincide con la instantánea o la versión esperada.",
+      error_SNAPSHOT_IDENTITY_MISMATCH: "El sistema restaurado no coincide con la instantánea o la versión esperada.",
+      error_RECOVERY_STATE_NOT_PERSISTENT: "Los registros de recuperación deben estar fuera de la instantánea raíz.",
       error_AUTHORIZATION: "La autorización fue cancelada o denegada.",
       error_CONFIRMATION_REQUIRED: "Confirma la actualización antes de continuar.",
       error_DISCOVERY_FAILED: "Lyra no pudo inspeccionar este sistema de forma segura.",

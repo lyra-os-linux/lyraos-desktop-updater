@@ -110,6 +110,7 @@ impl Service {
             plan_sha256: planned.plan_sha256.clone(),
             manifest_sha256: None,
             snapshot_number: None,
+            recovery: None,
             last_completed_step: Some("planned".to_string()),
             error_code: None,
             boot_verification: Some(BootVerification::Pending),
@@ -184,6 +185,7 @@ impl Service {
             plan_sha256: planned.plan_sha256.clone(),
             manifest_sha256: planned.plan.manifest_sha256.clone(),
             snapshot_number: None,
+            recovery: None,
             last_completed_step: Some("planned".to_string()),
             error_code: None,
             boot_verification: Some(BootVerification::Pending),
@@ -277,6 +279,7 @@ impl Service {
                 plan_sha256: plan_sha256.clone(),
                 manifest_sha256: None,
                 snapshot_number: None,
+                recovery: None,
                 last_completed_step: Some("planned".to_string()),
                 error_code: None,
                 boot_verification: Some(BootVerification::Pending),
@@ -398,6 +401,9 @@ impl Service {
             sequence: state.sequence,
             state: state.state,
             snapshot_number: state.snapshot_number,
+            recovered: state.state == OperationState::Completed
+                && state.recovery.is_some()
+                && state.boot_verification == Some(lyra_upgrade_core::BootVerification::Passed),
             error_code: state.error_code,
             events,
         }
@@ -447,26 +453,14 @@ impl Service {
                 state.error_code = Some("RECOVERY_DECLINED".to_string());
             }
             RecoveryAction::Rollback => {
-                let Some(snapshot) = state.snapshot_number else {
-                    return rejected(request_id, "SNAPSHOT_NOT_AVAILABLE");
-                };
-                let status = std::process::Command::new("snapper")
-                    .args([
-                        "--no-dbus",
-                        "--config",
-                        "root",
-                        "rollback",
-                        &snapshot.to_string(),
-                    ])
-                    .env_clear()
-                    .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
-                    .status();
-                if !status.is_ok_and(|status| status.success()) {
-                    return rejected(request_id, "ROLLBACK_FAILED");
+                if let Err(error) = lyra_upgrade_service::recovery::schedule_rollback(
+                    &self.state_root,
+                    &mut state,
+                    &now(),
+                ) {
+                    return rejected(request_id, error);
                 }
-                state.state = OperationState::AwaitingReboot;
-                state.error_code = None;
-                state.last_completed_step = Some("rollback-scheduled".to_string());
+                return self.status(request_id, operation_id, 0);
             }
         }
         state.sequence = state.sequence.saturating_add(1);

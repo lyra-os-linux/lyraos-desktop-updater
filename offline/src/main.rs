@@ -322,6 +322,7 @@ mod tests {
             plan_sha256: "a".repeat(64),
             manifest_sha256: Some("b".repeat(64)),
             snapshot_number,
+            recovery: None,
             last_completed_step: Some("downloaded".into()),
             error_code: None,
             boot_verification: Some(BootVerification::Pending),

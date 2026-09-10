@@ -17,6 +17,7 @@
     "target": {"$ref": "#/$defs/release"},
     "plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "recovery": {"$ref": "#/$defs/rollback"},
     "snapshot_number": {"type": "integer", "minimum": 0},
     "last_completed_step": {"type": "string", "maxLength": 128},
     "error_code": {"type": "string", "pattern": "^[A-Z0-9_]+$"},
@@ -25,6 +26,60 @@
     "updated_at": {"type": "string", "format": "date-time"}
   },
   "$defs": {
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_snapshot_number",
+        "source_snapshot",
+        "boot_snapshot"
+      ],
+      "properties": {
+        "source_snapshot_number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source_snapshot": {
+          "$ref": "#/$defs/subvolume"
+        },
+        "boot_snapshot": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/subvolume"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "subvolume": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "uuid",
+        "parent_uuid"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 6
+        },
+        "uuid": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "parent_uuid": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        }
+      }
+    },
     "release": {
       "type": "object",
       "additionalProperties": false,

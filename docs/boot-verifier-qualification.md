@@ -17,8 +17,9 @@ para encerrar descendentes que tenham sobrevivido à saída do worker.
 Falhas de descoberta, identidade, filesystem, RPMDB, dependências, alvo de
 boot, unidades falhadas e GRUB recebem códigos específicos no estado e no
 journal. Falha de verificação também encerra a unit com código não zero.
-Uma operação bem-sucedida avança para `Completed` e persiste a sequência do
-manifesto segundo o contrato existente.
+Um upgrade bem-sucedido avança para `Completed` e persiste a sequência do
+manifesto. Uma recuperação verificada usa a identidade de origem e mantém a
+sequência anterior; ver [qualificação de rollback](rollback-qualification.md).
 
 ## Ensaio em VM
 

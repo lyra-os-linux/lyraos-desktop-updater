@@ -133,6 +133,8 @@ pub enum Response {
         sequence: u64,
         state: OperationState,
         snapshot_number: Option<u64>,
+        #[serde(default)]
+        recovered: bool,
         error_code: Option<String>,
         events: Vec<OperationEvent>,
     },
