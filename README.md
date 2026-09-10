@@ -46,3 +46,7 @@ ambíguas bloqueiam a operação. Consulte
 A [qualificação offline em VM](docs/offline-cache-qualification.md) executa o
 worker real sem rede, verifica o cache preparado e a preservação dos
 repositórios em falhas anteriores à aplicação.
+
+A [qualificação do verificador de boot](docs/boot-verifier-qualification.md)
+reproduz a espera circular anterior e exercita conclusão, degradação e timeout
+com systemd real em uma VM descartável.
