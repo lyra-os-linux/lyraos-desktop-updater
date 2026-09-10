@@ -154,7 +154,13 @@ pub fn validate_manifest_route(
             return Err(ManifestError::InvalidFingerprint);
         }
     }
-    if manifest.minimum_free_space_bytes == 0
+    if manifest
+        .allowed_vendor_transitions
+        .iter()
+        .any(|transition| {
+            !crate::valid_vendor(&transition.from) || !crate::valid_vendor(&transition.to)
+        })
+        || manifest.minimum_free_space_bytes == 0
         || manifest.lockstep_packages.iter().any(|group| {
             group.len() < 2 || group.iter().any(|package| !valid_package(package)) || {
                 let unique: std::collections::BTreeSet<_> = group.iter().collect();

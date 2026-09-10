@@ -3,3 +3,4 @@ pub mod executor;
 pub mod manifest_fetch;
 pub mod planner;
 pub mod solver_xml;
+pub mod vendor_metadata;

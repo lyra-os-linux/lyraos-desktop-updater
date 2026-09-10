@@ -59,6 +59,46 @@ pub struct SolverPolicy {
     pub lockstep_packages: Vec<Vec<String>>,
 }
 
+/// An absent/empty RPM vendor is an unknown identity, never an implicit grant.
+pub fn valid_vendor(value: &str) -> bool {
+    !value.trim().is_empty() && value.len() <= 512 && !value.chars().any(char::is_control)
+}
+
+pub fn vendor_policy_blockers(
+    changes: &[PackageChange],
+    policy: &SolverPolicy,
+) -> Vec<PreflightIssue> {
+    changes
+        .iter()
+        .filter_map(|change| {
+            let from = change.current_vendor.as_deref().filter(|v| valid_vendor(v));
+            let to = change
+                .proposed_vendor
+                .as_deref()
+                .filter(|v| valid_vendor(v));
+            let permitted = match change.action {
+                PackageAction::Install => {
+                    from.is_none() && change.current_vendor.is_none() && to.is_some()
+                }
+                PackageAction::Remove => from.is_some() && change.proposed_vendor.is_none(),
+                _ => match (from, to) {
+                    (Some(from), Some(to)) => {
+                        from == to
+                            || policy
+                                .allowed_vendor_transitions
+                                .iter()
+                                .any(|allowed| allowed.from == from && allowed.to == to)
+                    }
+                    _ => false,
+                },
+            };
+            (!permitted).then(|| PreflightIssue::UnauthorizedVendorChange {
+                package: change.name.clone(),
+            })
+        })
+        .collect()
+}
+
 pub fn evaluate_solver_preflight(
     facts: &HostFacts,
     preflight_policy: PreflightPolicy,
@@ -98,20 +138,10 @@ pub fn evaluate_solver_preflight(
                 package: change.name.clone(),
             });
         }
-        if let (Some(from), Some(to)) = (&change.current_vendor, &change.proposed_vendor)
-            && from != to
-            && !solver_policy
-                .allowed_vendor_transitions
-                .iter()
-                .any(|allowed| allowed.from == *from && allowed.to == *to)
-        {
-            report
-                .blockers
-                .push(PreflightIssue::UnauthorizedVendorChange {
-                    package: change.name.clone(),
-                });
-        }
     }
+    report
+        .blockers
+        .extend(vendor_policy_blockers(&solver.changes, solver_policy));
     for group in &solver_policy.lockstep_packages {
         let changed: Vec<_> = group
             .iter()
@@ -135,6 +165,23 @@ pub fn evaluate_solver_preflight(
 mod tests {
     use super::*;
     use crate::{ReleaseIdentity, RepositoryFact};
+
+    #[test]
+    fn unknown_vendor_cannot_bypass_transition_policy() {
+        let mut package = change("critical-package", PackageAction::Upgrade);
+        package.current_vendor = None;
+        package.proposed_vendor = None;
+        let report = evaluate_solver_preflight(
+            &facts(),
+            PreflightPolicy::default(),
+            &solver(vec![package]),
+            &SolverPolicy::default(),
+        );
+        assert!(
+            !report.passed(),
+            "unknown vendors must not imply permission"
+        );
+    }
 
     fn facts() -> HostFacts {
         HostFacts {

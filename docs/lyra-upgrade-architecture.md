@@ -128,6 +128,29 @@ snapshot e margem conservadora compõem o requisito de espaço. O plano inclui a
 lista ordenada de mudanças; por isso seu SHA-256 muda diante de qualquer
 alteração da resolução.
 
+As listas auxiliares `to-change-vendor` do zypper são incorporadas sem duplicar
+um upgrade/downgrade/reinstall. A contagem RPM deve coincidir com
+`packages-to-change`; entradas incompletas e mudanças de arquitetura bloqueiam
+a interpretação. O contrato existente representa uma troca isolada como
+`Reinstall` com a mesma versão e fornecedores distintos.
+
+A identificação usa cabeçalhos do banco RPM para a versão instalada e
+`rpm:vendor` do RPM-MD para o candidato exato (nome, epoch/versão/release,
+arquitetura, alias). O cache deve ser o mesmo utilizado pelo zypper após
+validação das assinaturas; o checksum SHA-256/SHA-512 de primary também é
+conferido contra repomd. XML simples, gzip, xz e zstd são suportados.
+Metadados incompletos, identidades ambíguas/desconhecidas e formatos não
+suportados bloqueiam, sem inferir fornecedor a partir do alias.
+
+A mesma allowlist exata e direcional vale no planejamento, antes/depois do
+download em staging e na revalidação offline. Manifesto e identidades dos
+pacotes continuam vinculados ao hash confirmado. O espaço restante é
+reavaliado em cada fase, mas a redução dos bytes a baixar após preencher o
+cache não altera a identidade da transação aprovada. O executor offline
+revalida usando os repositórios/caches preparados antes de trocar os
+repositórios ativos. A qualificação completa de aplicação/recuperação offline
+continua sendo um gate independente.
+
 ## Política de comandos privilegiados
 
 O executor contém operações fechadas, equivalentes a:

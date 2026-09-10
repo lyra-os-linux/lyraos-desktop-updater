@@ -1,0 +1,3 @@
+<rpmdb><package>	<string>gpg-pubkey</string>	<integer>0</integer>	<string>2bc0db59</string>	<string>6aa17223</string><string/><string/></package>
+<package>	<string>lyra-vendor-fixture</string>	<integer>0</integer>	<string>1</string>	<string>1</string>	<string>noarch</string>	<string>Lyra Fixture A</string></package>
+</rpmdb>

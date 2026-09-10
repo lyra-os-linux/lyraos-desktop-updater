@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata xmlns="http://linux.duke.edu/metadata/common" xmlns:rpm="http://linux.duke.edu/metadata/rpm" packages="1">
+<package type="rpm"><name>lyra-vendor-fixture</name><arch>noarch</arch><version epoch="0" ver="2" rel="1"/>
+<checksum type="sha256" pkgid="YES">846aef94c90af0e00eca7e910ff9ce1884779dada3eedefe8673e394591b7ada</checksum>
+<summary>Isolated vendor fixture</summary><description>Vendor policy qualification</description><packager>Lyra</packager><url/>
+<time file="1788912000" build="1788912000"/><size package="6466" installed="7" archive="0"/>
+<location href="lyra-vendor-fixture-2-1.noarch.rpm"/><format><rpm:license>MIT</rpm:license><rpm:vendor>Lyra Fixture B</rpm:vendor><rpm:group>System</rpm:group><rpm:buildhost>fixture</rpm:buildhost><rpm:sourcerpm/>
+<rpm:provides><rpm:entry name="lyra-vendor-fixture" flags="EQ" epoch="0" ver="2" rel="1"/></rpm:provides>
+</format></package></metadata>

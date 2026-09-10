@@ -29,6 +29,9 @@ Requires:       curl
 Requires:       coreutils
 Requires:       dracut
 Requires:       gnupg
+Requires:       gzip
+Requires:       xz
+Requires:       zstd
 Requires:       grub2
 Requires:       mokutil
 Requires:       polkit

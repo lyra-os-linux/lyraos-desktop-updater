@@ -1,0 +1,11 @@
+<stream><install-summary download-size="6466" space-usage-diff="0" space-usage-installed="7" space-usage-removed="7" packages-to-change="1" need-restart="0" need-reboot="0">
+<to-reinstall>
+<solvable type="package" name="lyra-vendor-fixture" edition="1-1" arch="noarch" repository="fixture" edition-old="1-1" arch-old="noarch" summary="Isolated vendor fixture">
+<description>Vendor policy qualification</description></solvable>
+</to-reinstall>
+<to-change-vendor>
+<solvable type="package" name="lyra-vendor-fixture" edition="1-1" arch="noarch" repository="fixture" edition-old="1-1" arch-old="noarch" summary="Isolated vendor fixture">
+<description>Vendor policy qualification</description></solvable>
+</to-change-vendor>
+</install-summary>
+</stream>
