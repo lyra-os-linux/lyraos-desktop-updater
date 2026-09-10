@@ -13,6 +13,8 @@ Os cenários verificam:
 - falha de preflight, repetição recusada e nova tentativa explicitamente preparada;
 - RPM ausente sem publicação antecipada dos repositórios de destino;
 - mudança real nos bloqueios rejeitada pelo hash do plano;
+- aliases de destino diferentes dos ativos, com terceiro de origem desabilitado;
+- piso de espaço do manifesto acima da estimativa do solver, preservado no boot;
 - reprodução opcional da falha com o executável anterior à correção.
 
 Sucesso exige versão/vendor novos no banco RPM, `AwaitingReboot`, remoção do
@@ -68,3 +70,9 @@ de testes dentro do guest. O executável anterior, de
 O candidato aplicou o RPM 2-1 do fornecedor B; as falhas anteriores à
 aplicação conservaram o RPM 1-1 do fornecedor A e os repositórios originais.
 O guest encerrou com `LYRA_OFFLINE_CACHE_VM_EXIT=0`.
+
+A extensão para os invariantes do plano passou nos dez cenários em
+50,137 segundos, usando o mesmo worker. O terceiro desabilitado permaneceu
+no backup da origem, sem entrar no contexto de destino. O piso de 1,5 GiB
+foi mantido no plano e aceito na revalidação offline. Os testes Rust também
+recusaram espaço abaixo do piso de 8 GiB e uma versão de RPM divergente.

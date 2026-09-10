@@ -246,6 +246,31 @@ fn staging_and_offline_shared_boundary_rejects_vendor_drift_and_changed_allowlis
     assert!(revalidate_release_plan(&too_small, &cached, &manifest, &plan, &hash).is_err());
 }
 
+#[test]
+fn manifest_space_floor_survives_caching_and_is_still_enforced_before_apply() {
+    let mut manifest = manifest();
+    manifest.minimum_free_space_bytes = 8 * 1024 * 1024 * 1024;
+    let result = enriched("upgrade-vendor");
+    let plan = plan(&result, &manifest);
+    assert_eq!(plan.required_bytes, manifest.minimum_free_space_bytes);
+    let hash = plan.sha256().unwrap();
+    let mut cached = result.clone();
+    cached.download_bytes = 0;
+    revalidate_release_plan(&facts(), &cached, &manifest, &plan, &hash).unwrap();
+    let mut tight = facts();
+    tight.available_bytes = manifest.minimum_free_space_bytes - 1;
+    assert!(matches!(
+        revalidate_release_plan(&tight, &cached, &manifest, &plan, &hash),
+        Err(PlannerError::Blocked(blockers)) if blockers.contains(&lyra_upgrade_core::PreflightIssue::InsufficientSpace)
+    ));
+    // Normalizing remaining space must not conceal a different RPM transaction.
+    cached.changes[0].proposed_version = Some("3-1".into());
+    assert!(matches!(
+        revalidate_release_plan(&facts(), &cached, &manifest, &plan, &hash),
+        Err(PlannerError::PlanChanged)
+    ));
+}
+
 fn cache(primary: &str) -> tempfile::TempDir {
     let temp = tempfile::tempdir().unwrap();
     let dir = temp.path().join("fixture/repodata");

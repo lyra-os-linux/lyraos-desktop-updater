@@ -154,6 +154,29 @@ class OfflineVmTests(unittest.TestCase):
         self.assert_recoverable(result)
         self.assertIn('PlanChanged',result.stderr)
 
+    def test_disabled_source_third_party_is_not_a_target_repository(self):
+        disabled=Path('/etc/zypp/repos.d/third-party.repo')
+        disabled.write_text('[disabled-third-party]\nbaseurl=https://unreachable.invalid/repo\nenabled=0\nautorefresh=1\ngpgcheck=1\n')
+        self.before=tree_digest(Path('/etc/zypp/repos.d'))
+        Path('/system-update').unlink()
+        command(['/test/prepare-plan'])
+        plan=json.loads((OP/'plan.json').read_text())
+        self.assertEqual([repo['alias'] for repo in plan['repositories']],['fixture'])
+        self.assertEqual(plan['source']['version'],'1.0')
+        self.assertEqual(plan['target']['version'],'2.0')
+        self.assert_applied(command([WORKER],check=False))
+
+    def test_manifest_space_floor_survives_offline_revalidation(self):
+        floor=1536*1024*1024
+        manifest=json.loads((OP/'manifest.json').read_text())
+        manifest['minimum_free_space_bytes']=floor
+        (OP/'manifest.json').write_text(json.dumps(manifest))
+        Path('/system-update').unlink()
+        command(['/test/prepare-plan'])
+        plan=json.loads((OP/'plan.json').read_text())
+        self.assertEqual(plan['required_bytes'],floor)
+        self.assert_applied(command([WORKER],check=False))
+
     @unittest.skipUnless(Path('/test/baseline-worker').exists(),'baseline supplied only for regression reproduction')
     def test_previous_worker_cannot_use_a_prepared_transaction_without_global_cache(self):
         result=command(['/test/baseline-worker'],check=False)
