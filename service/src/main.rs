@@ -10,7 +10,9 @@ use lyra_upgrade_core::{
 use lyra_upgrade_protocol::{
     EventLevel, EventSource, OperationEvent, PlannedUpdate, RecoveryAction, Request, Response,
 };
-use lyra_upgrade_service::event_log::{EventLog, append_event, load_events, technical_event};
+use lyra_upgrade_service::event_log::{
+    EventLog, append_event, has_write_failure, load_events, record_write_failure, technical_event,
+};
 use lyra_upgrade_service::executor::{
     ExecutionObserver, OutputStream, execute_update, failure_state, stage_release_upgrade,
 };
@@ -319,11 +321,15 @@ impl Service {
         if state.state != OperationState::AwaitingConfirmation {
             return rejected(request_id, "INVALID_STATE");
         }
-        let log = self
-            .events
-            .entry(operation_id.clone())
-            .or_insert_with(|| Arc::new(Mutex::new(EventLog::default())))
-            .clone();
+        if has_write_failure(&self.state_root, &operation_id) {
+            return rejected(request_id, "EVENT_LOG_WRITE_FAILED");
+        }
+        let history = match load_events(&self.state_root, &operation_id, 0) {
+            Ok(history) if !history.incomplete => history,
+            _ => return rejected(request_id, "EVENT_LOG_READ_FAILED"),
+        };
+        let log = Arc::new(Mutex::new(EventLog::restore(history.events)));
+        self.events.insert(operation_id.clone(), log.clone());
         let observer = Observer {
             operation_id: operation_id.clone(),
             state_root: self.state_root.clone(),
@@ -387,13 +393,47 @@ impl Service {
             Ok(state) => state,
             Err(_) => return rejected(request_id, "OPERATION_NOT_FOUND"),
         };
-        let mut events = self
-            .events
-            .get(&operation_id)
-            .and_then(|events| events.lock().ok().map(|events| events.after(after)))
-            .unwrap_or_default();
-        if events.is_empty() {
-            events = load_events(&self.state_root, &operation_id, after).unwrap_or_default();
+        // Disk is authoritative even while the worker is active. A cached
+        // nonempty tail must not conceal a damaged or failed durable history.
+        let (mut events, mut history_error) =
+            match load_events(&self.state_root, &operation_id, after) {
+                Ok(history) => (
+                    history.events,
+                    history.incomplete.then_some("EVENT_LOG_READ_FAILED"),
+                ),
+                Err(_) => (Vec::new(), Some("EVENT_LOG_READ_FAILED")),
+            };
+        if has_write_failure(&self.state_root, &operation_id) {
+            history_error = Some("EVENT_LOG_WRITE_FAILED");
+        }
+        if let Some(log) = self.events.get(&operation_id) {
+            match log.lock() {
+                Ok(log) => {
+                    if log.persistence_failed {
+                        history_error = Some("EVENT_LOG_WRITE_FAILED");
+                    }
+                    if history_error.is_some() {
+                        events.extend(log.after(after));
+                        events.sort_by_key(|event| event.sequence);
+                        events.dedup_by_key(|event| event.sequence);
+                    }
+                }
+                Err(_) => history_error = Some("EVENT_LOG_READ_FAILED"),
+            }
+        }
+        if let Some(code) = history_error {
+            // An out-of-band diagnostic keeps both errors visible when the
+            // operation itself failed. It never consumes a persisted sequence.
+            events.push(OperationEvent {
+                operation_id: operation_id.clone(),
+                sequence: 0,
+                occurred_at: state.updated_at.clone(),
+                state: state.state,
+                level: EventLevel::Warning,
+                message_id: format!("error_{code}"),
+                fields: Default::default(),
+                technical: None,
+            });
         }
         Response::Status {
             request_id,
@@ -404,7 +444,9 @@ impl Service {
             recovered: state.state == OperationState::Completed
                 && state.recovery.is_some()
                 && state.boot_verification == Some(lyra_upgrade_core::BootVerification::Passed),
-            error_code: state.error_code,
+            error_code: state
+                .error_code
+                .or_else(|| history_error.map(str::to_owned)),
             events,
         }
     }
@@ -601,7 +643,12 @@ impl ExecutionObserver for Observer {
             .unwrap_or(OperationState::Failed);
         let event = technical_event(&self.operation_id, sequence, now(), state);
         let event = log.push_technical(event, source, &format!("{program}: {line}"));
-        let _ = append_event(&self.state_root, &self.operation_id, &event);
+        if append_event(&self.state_root, &self.operation_id, &event).is_err() {
+            if !log.persistence_failed {
+                record_write_failure(&self.state_root, &self.operation_id);
+            }
+            log.persistence_failed = true;
+        }
     }
 
     fn state_changed(&self, state: OperationState) {
@@ -619,7 +666,12 @@ impl ExecutionObserver for Observer {
             fields: BTreeMap::new(),
             technical: None,
         };
-        let _ = append_event(&self.state_root, &self.operation_id, &event);
+        if append_event(&self.state_root, &self.operation_id, &event).is_err() {
+            if !log.persistence_failed {
+                record_write_failure(&self.state_root, &self.operation_id);
+            }
+            log.persistence_failed = true;
+        }
         log.push_normative(event);
     }
 
@@ -630,10 +682,7 @@ impl ExecutionObserver for Observer {
 }
 
 fn next_sequence(log: &EventLog) -> u64 {
-    log.after(0)
-        .last()
-        .map(|event| event.sequence.saturating_add(1))
-        .unwrap_or(1)
+    log.next_sequence()
 }
 
 fn state_name(state: OperationState) -> &'static str {
@@ -784,5 +833,171 @@ mod ownership_tests {
         let root = std::env::temp_dir();
         assert!(!operation_owned_by(&root, "../../etc", 1000));
         assert!(save_operation_owner(&root, "../../etc", 1000).is_err());
+    }
+}
+
+#[cfg(test)]
+mod event_status_tests {
+    use super::*;
+    use lyra_upgrade_core::ReleaseIdentity;
+    use std::fs;
+
+    const ID: &str = "00000000-0000-4000-8000-000000000011";
+
+    fn fixture() -> (tempfile::TempDir, Service, OperationStateRecord) {
+        let root = tempfile::tempdir().unwrap();
+        let mut service = Service::new(1000);
+        service.state_root = root.path().to_path_buf();
+        let state = OperationStateRecord {
+            schema_version: 1,
+            operation_id: ID.into(),
+            sequence: 7,
+            operation: OperationKind::UpdateWithinRelease,
+            state: OperationState::AwaitingConfirmation,
+            source: ReleaseIdentity {
+                version: "1.0".into(),
+                edition: "desktop".into(),
+                architecture: "x86_64".into(),
+                build_id: "test".into(),
+            },
+            target: None,
+            plan_sha256: "a".repeat(64),
+            manifest_sha256: None,
+            snapshot_number: None,
+            recovery: None,
+            last_completed_step: Some("planned".into()),
+            error_code: None,
+            boot_verification: Some(BootVerification::Pending),
+            created_at: now(),
+            updated_at: now(),
+        };
+        save_state(root.path(), &state).unwrap();
+        save_operation_owner(root.path(), ID, 1000).unwrap();
+        (root, service, state)
+    }
+
+    fn observer(service: &mut Service) -> Observer {
+        let log = Arc::new(Mutex::new(EventLog::default()));
+        service.events.insert(ID.into(), log.clone());
+        Observer {
+            operation_id: ID.into(),
+            state_root: service.state_root.clone(),
+            log,
+            current_state: Mutex::new(OperationState::Applying),
+        }
+    }
+
+    #[test]
+    fn never_written_history_is_empty_without_false_error() {
+        let (_root, service, _) = fixture();
+        let Response::Status {
+            events, error_code, ..
+        } = service.status("s".into(), ID.into(), 0)
+        else {
+            panic!()
+        };
+        assert!(events.is_empty());
+        assert_eq!(error_code, None);
+    }
+
+    #[test]
+    fn cached_events_cannot_hide_read_failure_or_replace_operation_error() {
+        let (root, mut service, mut state) = fixture();
+        let observer = observer(&mut service);
+        observer.state_changed(OperationState::Applying);
+        observer.command_line("zypper", OutputStream::Stdout, "available details");
+        let path = root.path().join(ID).join("events.jsonl");
+        use std::io::Write;
+        fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap()
+            .write_all(b"{partial")
+            .unwrap();
+        state.state = OperationState::Failed;
+        state.error_code = Some("ZYPPER_APPLY_FAILED".into());
+        save_state(root.path(), &state).unwrap();
+        let saved = fs::read(root.path().join(ID).join("state.json")).unwrap();
+        let Response::Status {
+            events,
+            error_code,
+            state,
+            sequence,
+            ..
+        } = service.status("s".into(), ID.into(), 0)
+        else {
+            panic!()
+        };
+        assert_eq!(state, OperationState::Failed);
+        assert_eq!(sequence, 7);
+        assert_eq!(error_code.as_deref(), Some("ZYPPER_APPLY_FAILED"));
+        assert!(
+            events
+                .iter()
+                .any(|e| e.message_id == "error_EVENT_LOG_READ_FAILED")
+        );
+        assert_eq!(events.iter().filter(|e| e.sequence > 0).count(), 2);
+        assert_eq!(
+            fs::read(root.path().join(ID).join("state.json")).unwrap(),
+            saved
+        );
+        // A new service with no RAM cache still exposes the readable prefix.
+        let mut restarted = Service::new(1000);
+        restarted.state_root = root.path().to_path_buf();
+        let response = restarted.status("reopened".into(), ID.into(), 0);
+        let json = serde_json::to_string(&response).unwrap();
+        let Response::Status {
+            events, error_code, ..
+        } = serde_json::from_str::<Response>(&json).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(error_code.as_deref(), Some("ZYPPER_APPLY_FAILED"));
+        assert_eq!(events.iter().filter(|e| e.sequence > 0).count(), 2);
+        assert!(
+            events
+                .iter()
+                .any(|e| e.message_id == "error_EVENT_LOG_READ_FAILED")
+        );
+    }
+
+    #[test]
+    fn both_observer_paths_surface_write_failure_live_and_after_reopen() {
+        for technical in [true, false] {
+            let (root, mut service, _) = fixture();
+            let observer = observer(&mut service);
+            // A directory at the log path forces a real open/write failure.
+            fs::create_dir(root.path().join(ID).join("events.jsonl")).unwrap();
+            if technical {
+                observer.command_line("zypper", OutputStream::Stderr, "saved only in RAM");
+            } else {
+                observer.state_changed(OperationState::Applying);
+            }
+            assert!(has_write_failure(root.path(), ID));
+            let Response::Status {
+                events, error_code, ..
+            } = service.status("s".into(), ID.into(), 0)
+            else {
+                panic!()
+            };
+            assert_eq!(error_code.as_deref(), Some("EVENT_LOG_WRITE_FAILED"));
+            assert_eq!(events.iter().filter(|e| e.sequence > 0).count(), 1);
+            assert!(
+                events
+                    .iter()
+                    .any(|e| e.message_id == "error_EVENT_LOG_WRITE_FAILED")
+            );
+            let mut restarted = Service::new(1000);
+            restarted.state_root = root.path().to_path_buf();
+            let Response::Status {
+                events, error_code, ..
+            } = restarted.status("s".into(), ID.into(), 0)
+            else {
+                panic!()
+            };
+            assert_eq!(error_code.as_deref(), Some("EVENT_LOG_WRITE_FAILED"));
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].message_id, "error_EVENT_LOG_WRITE_FAILED");
+        }
     }
 }

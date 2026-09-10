@@ -117,6 +117,43 @@ for (const [locale, restored] of Object.entries({'en-US':'System restored', 'pt-
         result = subprocess.run(['node', '-e', script], cwd=ROOT, text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_history_notices_refresh_without_losing_events_or_advancing_cursor(self) -> None:
+        script = r"""
+const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
+const app = fs.readFileSync('ui/app.js', 'utf8');
+const nodes = {'#search': {value: ''}, '#filter': {value: 'all'}};
+const context = {window: {}, state: {events: [], lastSequence: 0}, escapeHtml: x => x};
+context.document = {querySelector: id => nodes[id] ||= {}};
+vm.createContext(context);
+vm.runInContext(fs.readFileSync('ui/i18n.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('ui/errors.js', 'utf8'), context);
+vm.runInContext(app.slice(app.indexOf('function addEvents('), app.indexOf('function escapeHtml(')), context);
+for (const locale of ['en-US', 'pt-BR', 'es-ES']) {
+  context.t = key => context.window.LYRA_UPGRADE_CATALOGS[locale][key] || key;
+  context.state = {events: [], lastSequence: 0};
+  context.items = [
+    {sequence: 5, message_id: 'state.applying', level: 'Info'},
+    {sequence: 6, technical: {text: 'retained output'}, level: 'Info'},
+    {sequence: 0, message_id: 'history-truncated', fields: {lines: '500'}, level: 'Warning'},
+    {sequence: 0, message_id: 'error_EVENT_LOG_READ_FAILED', level: 'Warning'},
+    {sequence: 0, message_id: 'error_EVENT_LOG_WRITE_FAILED', level: 'Warning'}
+  ];
+  vm.runInContext('addEvents(items)', context);
+  context.items[2].fields.lines = '1000';
+  vm.runInContext('addEvents(items)', context);
+  assert.equal(context.state.events.length, 5);
+  assert.equal(context.state.lastSequence, 6);
+  assert.equal(context.state.events.find(e => e.message_id === 'history-truncated').fields.lines, '1000');
+  assert.equal(nodes['#console'].textContent, 'retained output');
+  for (const key of ['history-truncated', 'error_EVENT_LOG_READ_FAILED', 'error_EVENT_LOG_WRITE_FAILED']) {
+    assert.notEqual(context.t(key), key);
+    assert.ok(nodes['#event-list'].innerHTML.includes(context.t(key)));
+  }
+}
+"""
+        result = subprocess.run(['node', '-e', script], cwd=ROOT, text=True, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_new_interface_keys_exist_in_all_catalogs(self) -> None:
         catalog = (UPGRADE / "ui/i18n.js").read_text(encoding="utf-8")
         for key in (
