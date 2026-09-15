@@ -1,8 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use lyra_upgrade_protocol::Request;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 struct ServiceProcess {
     child: Child,
@@ -11,7 +12,12 @@ struct ServiceProcess {
 }
 
 #[derive(Default)]
-struct ServiceClient(Mutex<Option<ServiceProcess>>);
+struct Connections {
+    query: Option<ServiceProcess>,
+    admin: Option<ServiceProcess>,
+}
+#[derive(Default)]
+struct ServiceClient(Arc<Mutex<Connections>>);
 
 #[tauri::command]
 fn layout_preview_enabled() -> bool {
@@ -62,11 +68,40 @@ fn reboot_system() -> Result<(), String> {
 }
 
 #[tauri::command]
-fn service_request(
+async fn service_request(
     request: serde_json::Value,
     client: tauri::State<'_, ServiceClient>,
 ) -> Result<serde_json::Value, String> {
-    let mut guard = client.0.lock().map_err(|_| "service client lock failed")?;
+    let request: Request = serde_json::from_value(request).map_err(|_| "INVALID_REQUEST")?;
+    if !request.is_supported() {
+        return Err("UNSUPPORTED_PROTOCOL".into());
+    }
+    if matches!(
+        request,
+        Request::Start {
+            confirmed: false,
+            ..
+        }
+    ) {
+        return Err("CONFIRMATION_REQUIRED".into());
+    }
+    let connections = client.0.clone();
+    tauri::async_runtime::spawn_blocking(move || exchange(request, connections))
+        .await
+        .map_err(|_| "SERVICE_UNAVAILABLE".to_string())?
+}
+
+fn exchange(
+    request: Request,
+    connections: Arc<Mutex<Connections>>,
+) -> Result<serde_json::Value, String> {
+    let mut connections = connections.lock().map_err(|_| "SERVICE_UNAVAILABLE")?;
+    let administrative = request.needs_authorization();
+    let guard = if administrative {
+        &mut connections.admin
+    } else {
+        &mut connections.query
+    };
     if guard
         .as_mut()
         .is_some_and(|process| process.child.try_wait().ok().flatten().is_some())
@@ -74,10 +109,26 @@ fn service_request(
         *guard = None;
     }
     if guard.is_none() {
-        let mut child = Command::new("pkexec")
-            .arg("/usr/libexec/lyra-upgrade-service")
+        let mut command = if administrative {
+            let mut command = Command::new("/usr/bin/pkexec");
+            command.arg("/usr/libexec/lyra-upgrade-service");
+            command
+        } else {
+            let mut command = Command::new("/usr/libexec/lyra-upgrade-service");
+            command.arg("--read-only");
+            command
+        };
+        command
             .env_clear()
-            .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
+            .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin");
+        if !administrative {
+            for key in ["HOME", "XDG_CACHE_HOME"] {
+                if let Some(value) = std::env::var_os(key) {
+                    command.env(key, value);
+                }
+            }
+        }
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -99,9 +150,12 @@ fn service_request(
         .write_all(b"\n")
         .map_err(|error| error.to_string())?;
     process.stdin.flush().map_err(|error| error.to_string())?;
+    use std::io::Read;
     let mut response = String::new();
     if process
         .stdout
+        .by_ref()
+        .take(16 * 1024 * 1024 + 1)
         .read_line(&mut response)
         .map_err(|error| error.to_string())?
         == 0
@@ -117,6 +171,9 @@ fn service_request(
             return Err("AUTHORIZATION".into());
         }
         return Err("service closed the protocol stream".into());
+    }
+    if response.len() > 16 * 1024 * 1024 || !response.ends_with('\n') {
+        return Err("INVALID_RESPONSE".into());
     }
     serde_json::from_str(&response).map_err(|error| format!("invalid service response: {error}"))
 }

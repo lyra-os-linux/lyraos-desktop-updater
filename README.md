@@ -9,7 +9,7 @@ Os contratos normativos estão em
   planejamento determinístico e persistência atômica;
 - `protocol`: requests e eventos versionados na fronteira do serviço;
 - `cli`: cliente sem privilégios e ferramenta de diagnóstico;
-- `service`: processo privilegiado autenticado por Polkit, vincula operações
+- `service`: consultas/planejamento sem root e executor autenticado por Polkit, vincula operações
   ao UID solicitante, revalida o plano e coordena zypper e Snapper;
 - `offline`: aplica upgrades de versão previamente baixados e confirmados no
   `system-update.target`;
@@ -50,3 +50,8 @@ repositórios em falhas anteriores à aplicação.
 A [qualificação do verificador de boot](docs/boot-verifier-qualification.md)
 reproduz a espera circular anterior e exercita conclusão, degradação e timeout
 com systemd real em uma VM descartável.
+
+A implementação 0.2.4 do [aceite Desktop #13](docs/desktop-13-acceptance.md) usa
+protocolo/plano v3. Abrir, consultar, planejar e acompanhar não solicitam senha.
+Autenticação ocorre somente nas ações administrativas explícitas. A promoção
+aguarda os ensaios GNOME de sucessor/boot/rollback nas issues Desktop #24/#26.

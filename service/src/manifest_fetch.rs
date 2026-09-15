@@ -1,4 +1,6 @@
 use std::fs;
+use std::io::Read;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -32,6 +34,7 @@ pub enum FetchError {
     NotYetValid,
     Expired,
     InvalidChannel,
+    InvalidSequence,
 }
 
 impl From<std::io::Error> for FetchError {
@@ -51,6 +54,87 @@ pub fn fetch_release_manifest(
     last_sequence: Option<u64>,
     channel: ManifestChannelPolicy,
 ) -> Result<ReleaseManifest, FetchError> {
+    Ok(fetch_verified_manifest(installed, last_sequence, channel)?.manifest)
+}
+
+pub struct VerifiedManifest {
+    pub manifest: ReleaseManifest,
+    pub document: Vec<u8>,
+    pub signature: Vec<u8>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PreviewCache {
+    schema_version: u32,
+    document: String,
+    signature: String,
+}
+
+/// This cache is only a display convenience in the unprivileged process.
+/// Planning and Start always retrieve the current signed offer again.
+pub fn fetch_release_preview(
+    installed: &ReleaseIdentity,
+    last_sequence: Option<u64>,
+    channel: ManifestChannelPolicy,
+    cache: &Path,
+) -> Result<(VerifiedManifest, bool), FetchError> {
+    match fetch_verified_manifest(installed, last_sequence, channel) {
+        Ok(verified) => {
+            let _ = save_preview_cache(cache, &verified);
+            Ok((verified, false))
+        }
+        Err(FetchError::Download) => {
+            let cached: PreviewCache =
+                serde_json::from_slice(&read_regular(cache, 4 * MAX_MANIFEST_BYTES)?)?;
+            if cached.schema_version != 1 {
+                return Err(FetchError::Signature);
+            }
+            let directory = tempfile::tempdir()?;
+            let document = directory.path().join("manifest.json");
+            let signature = directory.path().join("manifest.asc");
+            fs::write(&document, cached.document)?;
+            fs::write(&signature, cached.signature)?;
+            Ok((
+                verify_manifest_files(&document, &signature, installed, last_sequence, channel)?,
+                true,
+            ))
+        }
+        Err(error) => {
+            // Do not redisplay an older cached offer after observing a revoked,
+            // expired, unknown or invalid response.
+            let _ = fs::remove_file(cache);
+            Err(error)
+        }
+    }
+}
+
+fn save_preview_cache(path: &Path, manifest: &VerifiedManifest) -> Result<(), FetchError> {
+    use std::io::Write;
+    let parent = path.parent().ok_or(FetchError::InvalidChannel)?;
+    fs::create_dir_all(parent)?;
+    let mut file = tempfile::NamedTempFile::new_in(parent)?;
+    let cached = PreviewCache {
+        schema_version: 1,
+        document: String::from_utf8(manifest.document.clone())
+            .map_err(|_| FetchError::Signature)?,
+        signature: String::from_utf8(manifest.signature.clone())
+            .map_err(|_| FetchError::Signature)?,
+    };
+    serde_json::to_writer(&mut file, &cached)?;
+    file.flush()?;
+    file.as_file().sync_all()?;
+    file.persist(path)
+        .map_err(|error| FetchError::Io(error.error))?;
+    fs::File::open(parent)?.sync_all()?;
+    Ok(())
+}
+
+pub fn fetch_verified_manifest(
+    installed: &ReleaseIdentity,
+    last_sequence: Option<u64>,
+    channel: ManifestChannelPolicy,
+) -> Result<VerifiedManifest, FetchError> {
     let directory = tempfile::Builder::new()
         .prefix("lyra-upgrade-manifest-")
         .tempdir()?;
@@ -64,8 +148,39 @@ pub fn fetch_release_manifest(
     {
         return Err(FetchError::TooLarge);
     }
-    verify_signature(&manifest_path, &signature_path)?;
-    let manifest: ReleaseManifest = serde_json::from_slice(&fs::read(manifest_path)?)?;
+    let verified = verify_manifest_files(
+        &manifest_path,
+        &signature_path,
+        installed,
+        last_sequence,
+        channel,
+    )?;
+    for (index, repository) in verified.manifest.repositories.iter().enumerate() {
+        let key_path = directory.path().join(format!("repository-key-{index}.asc"));
+        fetch_repository_key(repository, &key_path)?;
+    }
+    Ok(verified)
+}
+
+/// Reused immediately before staging and offline, with the installed trust anchor.
+/// The signed bytes are retained; reserializing JSON cannot preserve a signature.
+pub fn verify_manifest_files(
+    document_path: &Path,
+    signature_path: &Path,
+    installed: &ReleaseIdentity,
+    last_sequence: Option<u64>,
+    channel: ManifestChannelPolicy,
+) -> Result<VerifiedManifest, FetchError> {
+    let document = read_regular(document_path, MAX_MANIFEST_BYTES)?;
+    let signature = read_regular(signature_path, MAX_MANIFEST_BYTES)?;
+    // Verify private copies of the exact bytes we parse, avoiding path replacement races.
+    let directory = tempfile::tempdir()?;
+    let document_copy = directory.path().join("manifest.json");
+    let signature_copy = directory.path().join("manifest.asc");
+    fs::write(&document_copy, &document)?;
+    fs::write(&signature_copy, &signature)?;
+    verify_signature(&document_copy, &signature_copy, Path::new(RELEASE_KEYRING))?;
+    let manifest: ReleaseManifest = serde_json::from_slice(&document)?;
     validate_manifest_route(
         &manifest,
         installed,
@@ -75,11 +190,11 @@ pub fn fetch_release_manifest(
     )
     .map_err(FetchError::Route)?;
     validate_time(&manifest)?;
-    for (index, repository) in manifest.repositories.iter().enumerate() {
-        let key_path = directory.path().join(format!("repository-key-{index}.asc"));
-        fetch_repository_key(repository, &key_path)?;
-    }
-    Ok(manifest)
+    Ok(VerifiedManifest {
+        manifest,
+        document,
+        signature,
+    })
 }
 
 fn manifest_urls(channel: ManifestChannelPolicy) -> Result<(String, String), FetchError> {
@@ -129,7 +244,7 @@ pub fn fetch_repository_key(
         return Err(FetchError::TooLarge);
     }
     let fingerprints = key_fingerprints(destination)?;
-    if !fingerprints.contains(&repository.signing_key_fingerprint) {
+    if fingerprints != [repository.signing_key_fingerprint.clone()] {
         return Err(FetchError::RepositoryKeyMismatch);
     }
     Ok(())
@@ -151,6 +266,10 @@ fn download(url: &str, destination: &Path) -> Result<(), FetchError> {
             "--tlsv1.2",
             "--max-filesize",
             "1048576",
+            "--connect-timeout",
+            "10",
+            "--max-time",
+            "60",
             "--output",
         ])
         .arg(destination)
@@ -166,7 +285,10 @@ fn download(url: &str, destination: &Path) -> Result<(), FetchError> {
 }
 
 fn key_fingerprints(key: &Path) -> Result<Vec<String>, FetchError> {
+    let home = tempfile::tempdir()?;
     let output = Command::new("gpg")
+        .arg("--homedir")
+        .arg(home.path())
         .args([
             "--batch",
             "--quiet",
@@ -192,47 +314,109 @@ fn key_fingerprints(key: &Path) -> Result<Vec<String>, FetchError> {
 }
 
 fn parse_fingerprints(output: &str) -> Vec<String> {
+    let mut primary = false;
+    let mut fingerprints = Vec::new();
+    for line in output.lines() {
+        let fields: Vec<_> = line.split(':').collect();
+        match fields.first().copied() {
+            Some("pub") => primary = true,
+            Some("sub" | "sec" | "ssb") => primary = false,
+            Some("fpr") if primary && fields.len() > 9 => {
+                fingerprints.push(fields[9].to_owned());
+                primary = false;
+            }
+            _ => {}
+        }
+    }
+    fingerprints
+}
+
+fn verify_signature(manifest: &Path, signature: &Path, keyring: &Path) -> Result<(), FetchError> {
+    let output = crate::process::output(
+        Command::new("gpgv")
+            .arg("--keyring")
+            .arg(keyring)
+            .arg("--")
+            .arg(signature)
+            .arg(manifest)
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .env("LC_ALL", "C")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null()),
+        20,
+    )?;
     output
-        .lines()
-        .filter_map(|line| {
-            let fields: Vec<_> = line.split(':').collect();
-            (fields.first() == Some(&"fpr") && fields.len() > 9).then(|| fields[9].to_string())
-        })
-        .collect()
+        .status
+        .success()
+        .then_some(())
+        .ok_or(FetchError::Signature)
 }
 
-fn verify_signature(manifest: &Path, signature: &Path) -> Result<(), FetchError> {
-    let status = Command::new("gpgv")
-        .args(["--keyring", RELEASE_KEYRING, "--"])
-        .arg(signature)
-        .arg(manifest)
-        .env_clear()
-        .env("PATH", "/usr/bin:/bin")
-        .env("LC_ALL", "C")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()?;
-    status.success().then_some(()).ok_or(FetchError::Signature)
+pub fn validate_time(manifest: &ReleaseManifest) -> Result<(), FetchError> {
+    validate_time_at(manifest, OffsetDateTime::now_utc())
 }
 
-fn validate_time(manifest: &ReleaseManifest) -> Result<(), FetchError> {
+fn validate_time_at(manifest: &ReleaseManifest, now: OffsetDateTime) -> Result<(), FetchError> {
     let from = OffsetDateTime::parse(&manifest.valid_from, &Rfc3339)
         .map_err(|_| FetchError::InvalidTime)?;
     let until = OffsetDateTime::parse(&manifest.valid_until, &Rfc3339)
         .map_err(|_| FetchError::InvalidTime)?;
-    let now = OffsetDateTime::now_utc();
+    if from >= until {
+        return Err(FetchError::InvalidTime);
+    }
     if now < from {
         return Err(FetchError::NotYetValid);
     }
-    if now > until {
+    if now >= until {
         return Err(FetchError::Expired);
     }
     Ok(())
 }
 
-pub fn read_last_manifest_sequence(path: &Path) -> Option<u64> {
-    fs::read_to_string(path).ok()?.trim().parse().ok()
+pub fn read_last_manifest_sequence(path: &Path) -> Result<Option<u64>, FetchError> {
+    let bytes = match read_regular(path, 32) {
+        Ok(bytes) => bytes,
+        Err(FetchError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+            // A dangling symlink is not a missing replay record.
+            if fs::symlink_metadata(path).is_ok() {
+                return Err(FetchError::InvalidSequence);
+            }
+            return Ok(None);
+        }
+        Err(error) => return Err(error),
+    };
+    let text = std::str::from_utf8(&bytes).map_err(|_| FetchError::InvalidSequence)?;
+    let text = text.strip_suffix('\n').unwrap_or(text);
+    if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(FetchError::InvalidSequence);
+    }
+    text.parse::<u64>()
+        .ok()
+        .filter(|value| *value > 0)
+        .map(Some)
+        .ok_or(FetchError::InvalidSequence)
+}
+
+fn read_regular(path: &Path, maximum: u64) -> Result<Vec<u8>, FetchError> {
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
+        .open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.nlink() != 1 {
+        return Err(FetchError::InvalidSequence);
+    }
+    if metadata.len() > maximum {
+        return Err(FetchError::TooLarge);
+    }
+    let mut bytes = Vec::new();
+    file.take(maximum + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > maximum {
+        return Err(FetchError::TooLarge);
+    }
+    Ok(bytes)
 }
 
 pub fn read_release_channel(path: &Path) -> Result<ManifestChannelPolicy, FetchError> {
@@ -258,9 +442,88 @@ mod tests {
     use super::{parse_fingerprints, read_release_channel, testing_manifest_urls};
     use lyra_upgrade_core::ManifestChannelPolicy;
 
+    fn time_fixture() -> super::ReleaseManifest {
+        serde_json::from_value(serde_json::json!({
+            "schema_version":1,"sequence":1,"status":"available",
+            "valid_from":"2026-09-01T00:00:00Z","valid_until":"2026-10-01T00:00:00Z",
+            "source":{"version":"1.0","edition":"desktop","architecture":"x86_64","build_id":"source"},
+            "target":{"version":"1.1","edition":"desktop","architecture":"x86_64","build_id":"target"},
+            "minimum_updater_version":"0.2.3","minimum_free_space_bytes":1,
+            "repositories":[],"allowed_removals":[],"allowed_vendor_transitions":[],"lockstep_packages":[]
+        })).unwrap()
+    }
+
+    #[test]
+    fn expiry_is_rechecked_with_a_closed_time_window() {
+        let mut manifest = time_fixture();
+        let parse = |s: &str| super::OffsetDateTime::parse(s, &super::Rfc3339).unwrap();
+        assert!(super::validate_time_at(&manifest, parse("2026-09-01T00:00:00Z")).is_ok());
+        assert!(matches!(
+            super::validate_time_at(&manifest, parse("2026-10-01T00:00:00Z")),
+            Err(super::FetchError::Expired)
+        ));
+        assert!(matches!(
+            super::validate_time_at(&manifest, parse("2026-08-31T23:59:59Z")),
+            Err(super::FetchError::NotYetValid)
+        ));
+        manifest.valid_until = manifest.valid_from.clone();
+        assert!(matches!(
+            super::validate_time_at(&manifest, parse("2026-09-15T00:00:00Z")),
+            Err(super::FetchError::InvalidTime)
+        ));
+    }
+
+    #[test]
+    fn native_signature_rejects_changed_bytes_and_untrusted_keyring() {
+        let home = tempfile::tempdir().unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        super::fs::set_permissions(home.path(), super::fs::Permissions::from_mode(0o700)).unwrap();
+        let run = |args: &[&str]| {
+            let output = crate::process::output(
+                super::Command::new("gpg")
+                    .arg("--homedir")
+                    .arg(home.path())
+                    .args(["--batch", "--pinentry-mode", "loopback", "--passphrase", ""])
+                    .args(args),
+                20,
+            )
+            .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            output.stdout
+        };
+        run(&[
+            "--quick-generate-key",
+            "Lyra isolated fixture <fixture@invalid.test>",
+            "ed25519",
+            "sign",
+            "0",
+        ]);
+        let keyring = home.path().join("trusted.gpg");
+        super::fs::write(&keyring, run(&["--export"])).unwrap();
+        let document = home.path().join("manifest.json");
+        super::fs::write(&document, b"{\"sequence\":1}\n").unwrap();
+        run(&["--detach-sign", document.to_str().unwrap()]);
+        let signature = home.path().join("manifest.json.sig");
+        super::verify_signature(&document, &signature, &keyring).unwrap();
+        super::fs::write(&document, b"{\"sequence\":2}\n").unwrap();
+        assert!(super::verify_signature(&document, &signature, &keyring).is_err());
+        super::fs::write(&document, b"{\"sequence\":1}\n").unwrap();
+        super::fs::write(&keyring, b"").unwrap();
+        assert!(super::verify_signature(&document, &signature, &keyring).is_err());
+        let _ = super::Command::new("gpgconf")
+            .arg("--homedir")
+            .arg(home.path())
+            .args(["--kill", "gpg-agent"])
+            .status();
+    }
+
     #[test]
     fn parses_only_machine_readable_fingerprints() {
-        let output = "pub:-:2048:1:1234::::::\nfpr:::::::::AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:\nuid:::::::::Lyra:\nfpr:::::::::BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB:\n";
+        let output = "pub:-:2048:1:1234::::::\nfpr:::::::::AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:\nuid:::::::::Lyra:\npub:-:2048:1:5678::::::\nfpr:::::::::BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB:\n";
         assert_eq!(
             parse_fingerprints(output),
             vec![

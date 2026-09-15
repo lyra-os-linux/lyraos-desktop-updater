@@ -31,6 +31,7 @@ struct Service {
     plans: HashMap<String, PendingPlan>,
     events: HashMap<String, Arc<Mutex<EventLog>>>,
     workers: Arc<(Mutex<usize>, Condvar)>,
+    read_only: bool,
 }
 
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
@@ -47,6 +48,7 @@ impl Service {
             plans: HashMap::new(),
             events: HashMap::new(),
             workers: Arc::new((Mutex::new(0), Condvar::new())),
+            read_only: false,
         }
     }
 
@@ -55,10 +57,17 @@ impl Service {
         if !request.is_supported() {
             return rejected(request_id, "UNSUPPORTED_PROTOCOL");
         }
+        if self.read_only && request.needs_authorization() {
+            return rejected(request_id, "AUTHORIZATION_REQUIRED");
+        }
         match request {
+            Request::CheckRelease { .. } => self.check_release(request_id),
+            Request::ReadTrustState { .. } => self.trust_state(request_id),
             Request::Inspect { .. } => self.inspect(request_id),
             Request::PlanUpdate { .. } => self.plan_update(request_id),
-            Request::PlanReleaseUpgrade { .. } => self.plan_release_upgrade(request_id),
+            Request::PlanReleaseUpgrade {
+                manifest_sha256, ..
+            } => self.plan_release_upgrade(request_id, manifest_sha256),
             Request::Start {
                 operation_id,
                 plan_sha256,
@@ -80,13 +89,117 @@ impl Service {
         }
     }
 
+    fn trust_state(&self, request_id: String) -> Response {
+        if self.read_only {
+            return lyra_upgrade_service::query_client::request(&Request::ReadTrustState {
+                protocol_version: lyra_upgrade_protocol::PROTOCOL_VERSION,
+                request_id: request_id.clone(),
+            })
+            .unwrap_or_else(|error| rejected(request_id, &error));
+        }
+        match read_last_manifest_sequence(&manifest_sequence_path()) {
+            Ok(last_manifest_sequence) => Response::TrustState {
+                request_id,
+                last_manifest_sequence,
+            },
+            Err(_) => rejected(request_id, "MANIFEST_SEQUENCE_INVALID"),
+        }
+    }
+
+    fn release_manifest(&self) -> Result<ReleaseManifest, &'static str> {
+        let identity = lyra_upgrade_core::release_identity_at(std::path::Path::new("/"))
+            .map_err(|_| "DISCOVERY_FAILED")?;
+        let channel = read_release_channel(std::path::Path::new(RELEASE_CHANNEL_PATH))
+            .map_err(|_| "RELEASE_CHANNEL_INVALID")?;
+        let sequence = match self.trust_state("release-trust".into()) {
+            Response::TrustState {
+                last_manifest_sequence,
+                ..
+            } => last_manifest_sequence,
+            _ => return Err("MANIFEST_SEQUENCE_INVALID"),
+        };
+        fetch_release_manifest(&identity, sequence, channel).map_err(|error| match error {
+            lyra_upgrade_service::manifest_fetch::FetchError::Route(
+                lyra_upgrade_core::ManifestError::NotAvailable
+                | lyra_upgrade_core::ManifestError::SourceMismatch,
+            ) => "RELEASE_NOT_AVAILABLE",
+            _ => "MANIFEST_INVALID",
+        })
+    }
+
+    fn check_release(&self, request_id: String) -> Response {
+        use sha2::{Digest, Sha256};
+        if self.read_only {
+            let identity = match lyra_upgrade_core::release_identity_at(std::path::Path::new("/")) {
+                Ok(identity) => identity,
+                Err(_) => return rejected(request_id, "DISCOVERY_FAILED"),
+            };
+            let channel = match read_release_channel(std::path::Path::new(RELEASE_CHANNEL_PATH)) {
+                Ok(channel) => channel,
+                Err(_) => return rejected(request_id, "RELEASE_CHANNEL_INVALID"),
+            };
+            let sequence = match self.trust_state("release-trust".into()) {
+                Response::TrustState {
+                    last_manifest_sequence,
+                    ..
+                } => last_manifest_sequence,
+                _ => return rejected(request_id, "QUERY_UNAVAILABLE"),
+            };
+            let cache = std::env::var_os("XDG_CACHE_HOME")
+                .map(PathBuf::from)
+                .or_else(|| {
+                    std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache"))
+                });
+            if let Some(cache) = cache.filter(|path| path.is_absolute()) {
+                return match lyra_upgrade_service::manifest_fetch::fetch_release_preview(
+                    &identity,
+                    sequence,
+                    channel,
+                    &cache.join("lyra-upgrade/release-preview.json"),
+                ) {
+                    Ok((verified, cached)) => Response::ReleaseOffer {
+                        request_id,
+                        manifest_sha256: format!(
+                            "{:x}",
+                            Sha256::digest(serde_json::to_vec(&verified.manifest).unwrap())
+                        ),
+                        manifest: Box::new(verified.manifest),
+                        cached,
+                    },
+                    Err(lyra_upgrade_service::manifest_fetch::FetchError::Route(
+                        lyra_upgrade_core::ManifestError::NotAvailable
+                        | lyra_upgrade_core::ManifestError::SourceMismatch,
+                    )) => rejected(request_id, "RELEASE_NOT_AVAILABLE"),
+                    Err(_) => rejected(request_id, "MANIFEST_INVALID"),
+                };
+            }
+        }
+        match self.release_manifest() {
+            Ok(manifest) => Response::ReleaseOffer {
+                cached: false,
+                request_id,
+                manifest_sha256: format!(
+                    "{:x}",
+                    Sha256::digest(serde_json::to_vec(&manifest).expect("manifest serialization"))
+                ),
+                manifest: Box::new(manifest),
+            },
+            Err(error) => rejected(request_id, error),
+        }
+    }
+
     fn inspect(&self, request_id: String) -> Response {
         match discover_host(&SystemBackend) {
-            Ok(facts) => {
+            Ok(mut facts) => {
+                facts.installed_packages =
+                    match lyra_upgrade_service::vendor_metadata::installed_packages(None) {
+                        Ok(packages) => packages,
+                        Err(_) => return rejected(request_id, "DISCOVERY_FAILED"),
+                    };
                 let preflight = evaluate_preflight(&facts, PreflightPolicy::default());
                 Response::Inspection {
                     request_id,
-                    facts,
+                    facts: Box::new(facts),
                     preflight,
                 }
             }
@@ -95,137 +208,45 @@ impl Service {
     }
 
     fn plan_update(&mut self, request_id: String) -> Response {
-        let planned = match plan_update_with_cached_metadata() {
-            Ok(planned) => planned,
-            Err(_) => return rejected(request_id, "PREFLIGHT_BLOCKED"),
-        };
-        let operation_id = Uuid::new_v4().to_string();
-        let now = now();
-        let state = OperationStateRecord {
-            schema_version: 1,
-            operation_id: operation_id.clone(),
-            sequence: 1,
-            operation: OperationKind::UpdateWithinRelease,
-            state: OperationState::AwaitingConfirmation,
-            source: planned.facts.release.clone(),
-            target: None,
-            plan_sha256: planned.plan_sha256.clone(),
-            manifest_sha256: None,
-            snapshot_number: None,
-            recovery: None,
-            last_completed_step: Some("planned".to_string()),
-            error_code: None,
-            boot_verification: Some(BootVerification::Pending),
-            created_at: now.clone(),
-            updated_at: now,
-        };
-        if save_state(&self.state_root, &state).is_err()
-            || save_operation_owner(&self.state_root, &operation_id, self.caller_uid).is_err()
-            || save_pending_plan(
-                &self.state_root,
-                &operation_id,
-                &PendingPlan {
-                    planned: planned.clone(),
-                    manifest: None,
-                },
-            )
-            .is_err()
-        {
-            return rejected(request_id, "STATE_WRITE_FAILED");
+        match plan_update_with_cached_metadata() {
+            Ok(planned) => plan_response(request_id, planned),
+            Err(lyra_upgrade_service::planner::PlannerError::Blocked(blockers)) => {
+                Response::PreflightBlocked {
+                    request_id,
+                    blockers,
+                }
+            }
+            Err(_) => rejected(request_id, "PREFLIGHT_BLOCKED"),
         }
-        let response = Response::Plan {
-            request_id,
-            operation_id: operation_id.clone(),
-            plan_sha256: planned.plan_sha256.clone(),
-            plan: Box::new(planned.plan.clone()),
-            preflight: planned.preflight.clone(),
-            planned: Box::new(planned.clone()),
-        };
-        self.plans.insert(
-            operation_id.clone(),
-            PendingPlan {
-                planned,
-                manifest: None,
-            },
-        );
-        self.events
-            .insert(operation_id, Arc::new(Mutex::new(EventLog::default())));
-        response
     }
 
-    fn plan_release_upgrade(&mut self, request_id: String) -> Response {
-        let facts = match discover_host(&SystemBackend) {
-            Ok(facts) => facts,
-            Err(_) => return rejected(request_id, "DISCOVERY_FAILED"),
-        };
-        let channel = match read_release_channel(std::path::Path::new(RELEASE_CHANNEL_PATH)) {
-            Ok(channel) => channel,
-            Err(_) => return rejected(request_id, "RELEASE_CHANNEL_INVALID"),
-        };
-        let manifest = match fetch_release_manifest(
-            &facts.release,
-            read_last_manifest_sequence(&manifest_sequence_path()),
-            channel,
-        ) {
+    fn plan_release_upgrade(
+        &mut self,
+        request_id: String,
+        expected_manifest_hash: String,
+    ) -> Response {
+        use sha2::{Digest, Sha256};
+        let manifest = match self.release_manifest() {
             Ok(manifest) => manifest,
-            Err(_) => return rejected(request_id, "MANIFEST_INVALID"),
+            Err(error) => return rejected(request_id, error),
         };
-        let planned = match plan_release_upgrade(&manifest) {
-            Ok(planned) => planned,
-            Err(_) => return rejected(request_id, "PREFLIGHT_BLOCKED"),
-        };
-        let operation_id = Uuid::new_v4().to_string();
-        let now = now();
-        let state = OperationStateRecord {
-            schema_version: 1,
-            operation_id: operation_id.clone(),
-            sequence: 1,
-            operation: OperationKind::ReleaseUpgrade,
-            state: OperationState::AwaitingConfirmation,
-            source: planned.facts.release.clone(),
-            target: Some(manifest.target.clone()),
-            plan_sha256: planned.plan_sha256.clone(),
-            manifest_sha256: planned.plan.manifest_sha256.clone(),
-            snapshot_number: None,
-            recovery: None,
-            last_completed_step: Some("planned".to_string()),
-            error_code: None,
-            boot_verification: Some(BootVerification::Pending),
-            created_at: now.clone(),
-            updated_at: now,
-        };
-        if save_state(&self.state_root, &state).is_err()
-            || save_operation_owner(&self.state_root, &operation_id, self.caller_uid).is_err()
-            || save_pending_plan(
-                &self.state_root,
-                &operation_id,
-                &PendingPlan {
-                    planned: planned.clone(),
-                    manifest: Some(manifest.clone()),
-                },
-            )
-            .is_err()
-        {
-            return rejected(request_id, "STATE_WRITE_FAILED");
-        }
-        let response = Response::Plan {
-            request_id,
-            operation_id: operation_id.clone(),
-            plan_sha256: planned.plan_sha256.clone(),
-            plan: Box::new(planned.plan.clone()),
-            preflight: planned.preflight.clone(),
-            planned: Box::new(planned.clone()),
-        };
-        self.plans.insert(
-            operation_id.clone(),
-            PendingPlan {
-                planned,
-                manifest: Some(manifest),
-            },
+        let hash = format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&manifest).expect("manifest serialization"))
         );
-        self.events
-            .insert(operation_id, Arc::new(Mutex::new(EventLog::default())));
-        response
+        if hash != expected_manifest_hash {
+            return rejected(request_id, "MANIFEST_CHANGED");
+        }
+        match plan_release_upgrade(&manifest) {
+            Ok(planned) => plan_response(request_id, planned),
+            Err(lyra_upgrade_service::planner::PlannerError::Blocked(blockers)) => {
+                Response::PreflightBlocked {
+                    request_id,
+                    blockers,
+                }
+            }
+            Err(_) => rejected(request_id, "PREFLIGHT_BLOCKED"),
+        }
     }
 
     fn start(
@@ -259,27 +280,42 @@ impl Service {
             return rejected(request_id, "PLAN_HASH_MISMATCH");
         }
         if !operation_owned_by(&self.state_root, &operation_id, self.caller_uid) {
-            // A first PlanUpdate may be produced by the unprivileged client and
-            // submitted to a fresh privileged process. Release upgrades never
-            // use this fallback: their signed manifest and pending plan must
-            // already have been persisted by PlanReleaseUpgrade.
-            if submitted.plan.operation != OperationKind::UpdateWithinRelease {
-                return rejected(request_id, "OPERATION_NOT_FOUND");
-            }
+            // Preview is untrusted. Recompute after authentication, before writing.
             if std::fs::symlink_metadata(self.state_root.join(&operation_id)).is_ok() {
                 return rejected(request_id, "OPERATION_NOT_FOUND");
             }
+            let authoritative = match submitted.plan.operation {
+                OperationKind::UpdateWithinRelease => plan_update_with_cached_metadata(),
+                OperationKind::ReleaseUpgrade => {
+                    let manifest = match self.release_manifest() {
+                        Ok(manifest) => manifest,
+                        Err(error) => return rejected(request_id, error),
+                    };
+                    if submitted.manifest.as_ref() != Some(&manifest) {
+                        return rejected(request_id, "MANIFEST_CHANGED");
+                    }
+                    plan_release_upgrade(&manifest)
+                }
+            };
+            let authoritative = match authoritative {
+                Ok(planned)
+                    if planned.plan_sha256 == plan_sha256 && planned.plan == submitted.plan =>
+                {
+                    planned
+                }
+                _ => return rejected(request_id, "PLAN_CHANGED"),
+            };
             let timestamp = now();
             let initial = OperationStateRecord {
                 schema_version: 1,
                 operation_id: operation_id.clone(),
                 sequence: 1,
-                operation: OperationKind::UpdateWithinRelease,
+                operation: authoritative.plan.operation,
                 state: OperationState::AwaitingConfirmation,
                 source: submitted.facts.release.clone(),
-                target: None,
+                target: authoritative.plan.target.clone(),
                 plan_sha256: plan_sha256.clone(),
-                manifest_sha256: None,
+                manifest_sha256: authoritative.plan.manifest_sha256.clone(),
                 snapshot_number: None,
                 recovery: None,
                 last_completed_step: Some("planned".to_string()),
@@ -290,7 +326,7 @@ impl Service {
             };
             let pending = PendingPlan {
                 planned: submitted.clone(),
-                manifest: None,
+                manifest: authoritative.manifest.clone(),
             };
             if save_state(&self.state_root, &initial).is_err()
                 || save_pending_plan(&self.state_root, &operation_id, &pending).is_err()
@@ -386,6 +422,15 @@ impl Service {
     }
 
     fn status(&self, request_id: String, operation_id: String, after: u64) -> Response {
+        if self.read_only {
+            return lyra_upgrade_service::query_client::request(&Request::Status {
+                protocol_version: lyra_upgrade_protocol::PROTOCOL_VERSION,
+                request_id: request_id.clone(),
+                operation_id,
+                after_sequence: Some(after),
+            })
+            .unwrap_or_else(|error| rejected(request_id, &error));
+        }
         if !operation_owned_by(&self.state_root, &operation_id, self.caller_uid) {
             return rejected(request_id, "OPERATION_NOT_FOUND");
         }
@@ -396,7 +441,11 @@ impl Service {
         // Disk is authoritative even while the worker is active. A cached
         // nonempty tail must not conceal a damaged or failed durable history.
         let (mut events, mut history_error) =
-            match load_events(&self.state_root, &operation_id, after) {
+            match lyra_upgrade_service::event_log::load_events_read_only(
+                &self.state_root,
+                &operation_id,
+                after,
+            ) {
                 Ok(history) => (
                     history.events,
                     history.incomplete.then_some("EVENT_LOG_READ_FAILED"),
@@ -437,6 +486,13 @@ impl Service {
         }
         Response::Status {
             request_id,
+            report: lyra_upgrade_service::inventory::load(
+                &self
+                    .state_root
+                    .join(&operation_id)
+                    .join("inventory-after.json"),
+            )
+            .ok(),
             operation_id,
             sequence: state.sequence,
             state: state.state,
@@ -478,6 +534,9 @@ impl Service {
         operation_id: String,
         action: RecoveryAction,
     ) -> Response {
+        if action == RecoveryAction::ShowDiagnostics {
+            return self.status(request_id, operation_id, 0);
+        }
         if !operation_owned_by(&self.state_root, &operation_id, self.caller_uid) {
             return rejected(request_id, "OPERATION_NOT_FOUND");
         }
@@ -511,6 +570,17 @@ impl Service {
             return rejected(request_id, "STATE_WRITE_FAILED");
         }
         self.status(request_id, operation_id, 0)
+    }
+}
+
+fn plan_response(request_id: String, planned: PlannedUpdate) -> Response {
+    Response::Plan {
+        request_id,
+        operation_id: Uuid::new_v4().to_string(),
+        plan_sha256: planned.plan_sha256.clone(),
+        plan: Box::new(planned.plan.clone()),
+        preflight: planned.preflight.clone(),
+        planned: Box::new(planned),
     }
 }
 
@@ -583,6 +653,7 @@ fn valid_operation_id(value: &str) -> bool {
 }
 
 fn caller_uid() -> Option<u32> {
+    (unsafe { libc::geteuid() } == 0).then_some(())?;
     std::env::var("PKEXEC_UID").ok()?.parse().ok()
 }
 
@@ -721,18 +792,40 @@ fn rejected(request_id: String, error_code: &str) -> Response {
 }
 
 fn main() {
-    let Some(caller_uid) = caller_uid() else {
+    let args: Vec<_> = std::env::args().skip(1).collect();
+    if args == ["--query-connection"] {
+        if let Err(error) = query_connection() {
+            eprintln!("query failed: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    let read_only = args == ["--read-only"];
+    if !args.is_empty() && !read_only {
+        std::process::exit(2);
+    }
+    let Some(caller_uid) = (if read_only {
+        Some(unsafe { libc::getuid() })
+    } else {
+        caller_uid()
+    }) else {
         eprintln!("lyra-upgrade-service: missing authenticated caller identity");
         std::process::exit(1);
     };
     let mut service = Service::new(caller_uid);
-    for line in io::stdin().lock().lines() {
-        let response = match line
-            .ok()
-            .and_then(|line| serde_json::from_str::<Request>(&line).ok())
-        {
-            Some(request) => service.handle(request),
-            None => rejected("unknown".to_string(), "INVALID_REQUEST"),
+    service.read_only = read_only;
+    let mut input = io::stdin().lock();
+    loop {
+        let response = match read_request(&mut input) {
+            Ok(Some(request)) => service.handle(request),
+            Ok(None) => break,
+            Err(_) => {
+                println!(
+                    "{}",
+                    serde_json::to_string(&rejected("unknown".into(), "INVALID_REQUEST")).unwrap()
+                );
+                break;
+            }
         };
         println!(
             "{}",
@@ -746,6 +839,61 @@ fn main() {
                 .wait(active)
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
         }
+    }
+}
+
+fn read_request(reader: &mut impl BufRead) -> io::Result<Option<Request>> {
+    use std::io::Read;
+    let mut line = Vec::new();
+    reader
+        .take(lyra_upgrade_service::query_client::MAX_REQUEST + 1)
+        .read_until(b'\n', &mut line)?;
+    if line.is_empty() {
+        return Ok(None);
+    }
+    if line.len() as u64 > lyra_upgrade_service::query_client::MAX_REQUEST
+        || line.last() != Some(&b'\n')
+    {
+        return Err(io::Error::other("invalid request size"));
+    }
+    serde_json::from_slice(&line)
+        .map(Some)
+        .map_err(io::Error::other)
+}
+
+fn query_connection() -> io::Result<()> {
+    use std::io::Write;
+    use std::os::fd::{AsRawFd, FromRawFd};
+    use std::os::unix::net::UnixStream;
+    if unsafe { libc::geteuid() } != 0 {
+        return Err(io::Error::other("query broker requires systemd"));
+    }
+    // systemd Accept=yes hands a connected AF_UNIX socket to stdin.
+    let mut stream = unsafe { UnixStream::from_raw_fd(0) };
+    let uid = lyra_upgrade_service::query_client::peer_uid(stream.as_raw_fd())?;
+    stream.set_read_timeout(Some(std::time::Duration::from_secs(10)))?;
+    stream.set_write_timeout(Some(std::time::Duration::from_secs(10)))?;
+    let response = match read_request(&mut io::BufReader::new(stream.try_clone()?)) {
+        Ok(Some(request)) => query_response(&Service::new(uid), request),
+        _ => rejected("unknown".into(), "INVALID_REQUEST"),
+    };
+    serde_json::to_writer(&mut stream, &response)?;
+    stream.write_all(b"\n")
+}
+
+fn query_response(service: &Service, request: Request) -> Response {
+    let id = request.request_id().to_owned();
+    if !request.is_supported() {
+        return rejected(id, "UNSUPPORTED_PROTOCOL");
+    }
+    match request {
+        Request::Status {
+            operation_id,
+            after_sequence,
+            ..
+        } => service.status(id, operation_id, after_sequence.unwrap_or(0)),
+        Request::ReadTrustState { .. } => service.trust_state(id),
+        _ => rejected(id, "READ_ONLY_REQUEST_REQUIRED"),
     }
 }
 
@@ -874,6 +1022,87 @@ mod event_status_tests {
         save_state(root.path(), &state).unwrap();
         save_operation_owner(root.path(), ID, 1000).unwrap();
         (root, service, state)
+    }
+
+    #[test]
+    fn query_broker_reads_only_the_callers_operation_without_writing() {
+        let (root, service, _) = fixture();
+        let request = || Request::Status {
+            protocol_version: lyra_upgrade_protocol::PROTOCOL_VERSION,
+            request_id: "query".into(),
+            operation_id: ID.into(),
+            after_sequence: None,
+        };
+        let before = fs::read(root.path().join(ID).join("state.json")).unwrap();
+        assert!(matches!(
+            query_response(&service, request()),
+            Response::Status { .. }
+        ));
+        assert!(!root.path().join(ID).join(".events.lock").exists());
+        assert_eq!(
+            fs::read(root.path().join(ID).join("state.json")).unwrap(),
+            before
+        );
+        let mut other = Service::new(1001);
+        other.state_root = root.path().to_path_buf();
+        assert!(
+            matches!(query_response(&other, request()), Response::Rejected { error_code, .. } if error_code == "OPERATION_NOT_FOUND")
+        );
+        for request in [
+            Request::Cancel {
+                protocol_version: 3,
+                request_id: "cancel".into(),
+                operation_id: ID.into(),
+            },
+            Request::PlanUpdate {
+                protocol_version: 3,
+                request_id: "plan".into(),
+            },
+            Request::AcknowledgeRecovery {
+                protocol_version: 3,
+                request_id: "rollback".into(),
+                operation_id: ID.into(),
+                recovery_action: RecoveryAction::Rollback,
+            },
+        ] {
+            assert!(
+                matches!(query_response(&service, request), Response::Rejected { error_code, .. } if error_code == "READ_ONLY_REQUEST_REQUIRED")
+            );
+        }
+        assert_eq!(
+            fs::read(root.path().join(ID).join("state.json")).unwrap(),
+            before
+        );
+    }
+
+    #[test]
+    fn read_only_mode_refuses_admin_actions_before_opening_state() {
+        let root = tempfile::tempdir().unwrap();
+        let mut service = Service::new(1000);
+        service.state_root = root.path().join("never-created");
+        service.read_only = true;
+        for action in [RecoveryAction::Rollback, RecoveryAction::KeepCurrent] {
+            let response = service.handle(Request::AcknowledgeRecovery {
+                protocol_version: 3,
+                request_id: "mutation".into(),
+                operation_id: ID.into(),
+                recovery_action: action,
+            });
+            assert!(
+                matches!(response, Response::Rejected { error_code, .. } if error_code == "AUTHORIZATION_REQUIRED")
+            );
+        }
+        assert!(!service.state_root.exists());
+    }
+
+    #[test]
+    fn typed_stream_refuses_unknown_fields_truncated_and_oversize_requests() {
+        for input in [
+            b"{\"kind\":\"Inspect\",\"protocol_version\":3,\"request_id\":\"a\",\"argv\":[\"sh\"]}\n".to_vec(),
+            b"{\"kind\":\"Inspect\"}".to_vec(),
+            vec![b'x'; lyra_upgrade_service::query_client::MAX_REQUEST as usize + 1],
+        ] { assert!(read_request(&mut io::Cursor::new(input)).is_err()); }
+        assert!(read_request(&mut io::Cursor::new(b"")).unwrap().is_none());
     }
 
     fn observer(service: &mut Service) -> Observer {

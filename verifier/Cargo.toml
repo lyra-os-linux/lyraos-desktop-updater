@@ -8,5 +8,6 @@ description = "Post-boot verifier for Lyra Upgrade"
 
 [dependencies]
 lyra-upgrade-core = { path = "../core" }
+lyra-upgrade-service = { path = "../service" }
 serde_json.workspace = true
 quick-xml = "0.38"

@@ -34,7 +34,44 @@ impl From<io::Error> for VendorMetadataError {
 
 /// Populate every required side atomically. No guessed, stale or partial vendors.
 pub fn enrich_solver_vendors(solver: &mut SolverResult, raw_cache: &Path) -> VendorResult<()> {
-    let output = Command::new("rpm")
+    enrich_solver_vendors_at(solver, raw_cache, None)
+}
+
+pub fn enrich_solver_vendors_at(
+    solver: &mut SolverResult,
+    raw_cache: &Path,
+    root: Option<&Path>,
+) -> VendorResult<()> {
+    let xml = installed_xml(root)?;
+    enrich_from_rpm_xml(solver, raw_cache, &xml)
+}
+
+pub fn installed_packages(
+    root: Option<&Path>,
+) -> VendorResult<Vec<lyra_upgrade_core::InstalledPackage>> {
+    let catalog = installed_vendors(&installed_xml(root)?)?;
+    let mut packages = Vec::new();
+    for ((name, version, architecture), vendor) in catalog {
+        let vendor = vendor.ok_or(VendorMetadataError::Invalid("ambiguous installed package"))?;
+        packages.push(lyra_upgrade_core::InstalledPackage {
+            name,
+            version,
+            architecture,
+            vendor,
+        });
+    }
+    if packages.is_empty() {
+        return Err(VendorMetadataError::Invalid("empty installed inventory"));
+    }
+    Ok(packages)
+}
+
+fn installed_xml(root: Option<&Path>) -> VendorResult<Vec<u8>> {
+    let mut command = Command::new("rpm");
+    if let Some(root) = root {
+        command.arg("--root").arg(root);
+    }
+    let output = command
         .args(["-qa", "--queryformat", RPM_QUERY])
         .env_clear()
         .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
@@ -47,7 +84,7 @@ pub fn enrich_solver_vendors(solver: &mut SolverResult, raw_cache: &Path) -> Ven
     let mut xml = b"<rpmdb>".to_vec();
     xml.extend(output.stdout);
     xml.extend(b"</rpmdb>");
-    enrich_from_rpm_xml(solver, raw_cache, &xml)
+    Ok(xml)
 }
 
 /// Also used by the native qualification harness with a private RPM database.

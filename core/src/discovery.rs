@@ -87,6 +87,16 @@ fn allowed_probe(program: &str, arguments: &[&str]) -> bool {
     matches!(
         (program, arguments),
         ("findmnt", ["--noheadings", "--output", "FSTYPE", "/"])
+            | (
+                "findmnt",
+                [
+                    "--json",
+                    "--target",
+                    "/" | "/home" | "/boot/efi",
+                    "--output",
+                    "TARGET,OPTIONS,MAJ:MIN"
+                ]
+            )
             | ("snapper", ["--no-dbus", "--config", "root", "get-config"])
             | ("rpm", ["--verifydb"])
             | ("mokutil", ["--sb-state"])
@@ -182,6 +192,8 @@ pub fn discover_host(backend: &impl DiscoveryBackend) -> Result<HostFacts, Disco
         secure_boot_enabled,
         repositories,
         held_packages,
+        installed_packages: Vec::new(),
+        storage: Some(discover_storage(backend)?),
         orphaned_packages,
     })
 }
@@ -205,6 +217,87 @@ fn discover_package_lock(backend: &impl DiscoveryBackend) -> Result<bool, Discov
         .is_err())
 }
 
+#[derive(serde::Deserialize)]
+struct Mount {
+    target: String,
+    options: String,
+    #[serde(rename = "maj:min")]
+    device: String,
+}
+
+fn home_isolated(root: &Mount, home: &Mount) -> bool {
+    if home.target != "/home" || root.device.is_empty() || home.device.is_empty() {
+        return false;
+    }
+    if root.device != home.device {
+        return true;
+    }
+    let subvolume = |mount: &Mount| -> Option<u64> {
+        mount
+            .options
+            .split(',')
+            .find_map(|option| option.strip_prefix("subvolid=")?.parse().ok())
+    };
+    matches!((subvolume(root), subvolume(home)), (Some(root), Some(home)) if root != home)
+}
+
+fn discover_storage(backend: &impl DiscoveryBackend) -> Result<crate::StorageFacts, DiscoverError> {
+    let probe = |arguments: &'static [&'static str]| -> Result<Mount, DiscoverError> {
+        #[derive(serde::Deserialize)]
+        struct Mounts {
+            filesystems: Vec<Mount>,
+        }
+        let output = backend.run("findmnt", arguments)?;
+        if !output.success {
+            return Err(DiscoverError::ReadFailed("mount-layout"));
+        }
+        let mut value: Mounts = serde_json::from_str(&output.stdout)
+            .map_err(|_| DiscoverError::ReadFailed("mount-layout"))?;
+        if value.filesystems.len() != 1 {
+            return Err(DiscoverError::ReadFailed("mount-layout"));
+        }
+        Ok(value.filesystems.remove(0))
+    };
+    let root = probe(&[
+        "--json",
+        "--target",
+        "/",
+        "--output",
+        "TARGET,OPTIONS,MAJ:MIN",
+    ])?;
+    let home = probe(&[
+        "--json",
+        "--target",
+        "/home",
+        "--output",
+        "TARGET,OPTIONS,MAJ:MIN",
+    ])?;
+    let firmware = backend.read_dir(Path::new("/sys/firmware"))?;
+    let esp_available_bytes = if firmware.iter().any(|entry| entry == "efi") {
+        let esp = probe(&[
+            "--json",
+            "--target",
+            "/boot/efi",
+            "--output",
+            "TARGET,OPTIONS,MAJ:MIN",
+        ])?;
+        if esp.target != "/boot/efi" || !esp.options.split(',').any(|option| option == "rw") {
+            return Err(DiscoverError::ReadFailed("esp-not-writable"));
+        }
+        Some(backend.available_bytes(Path::new("/boot/efi"))?)
+    } else {
+        None
+    };
+    Ok(crate::StorageFacts {
+        root_writable: root.target == "/"
+            && root.options.split(',').any(|option| option == "rw")
+            && !root.options.split(',').any(|option| option == "degraded"),
+        home_isolated: home_isolated(&root, &home),
+        boot_available_bytes: backend.available_bytes(Path::new("/boot"))?,
+        esp_available_bytes,
+    })
+}
+
 struct ParsedRelease {
     version: String,
     architecture: String,
@@ -223,6 +316,9 @@ pub fn release_identity_at(root: &Path) -> Result<ReleaseIdentity, DiscoverError
 }
 
 fn parse_release(content: &str) -> Result<ParsedRelease, DiscoverError> {
+    if parse_assignment(content, "LYRA_EDITION").as_deref() != Some("desktop") {
+        return Err(DiscoverError::InvalidRelease);
+    }
     let version =
         parse_assignment(content, "LYRA_VERSION_ID").ok_or(DiscoverError::InvalidRelease)?;
     let architecture =
@@ -246,11 +342,15 @@ fn parse_release(content: &str) -> Result<ParsedRelease, DiscoverError> {
 }
 
 fn parse_assignment(content: &str, name: &str) -> Option<String> {
-    content.lines().find_map(|line| {
-        let value = line.strip_prefix(name)?.strip_prefix('=')?;
-        let value = value.strip_prefix('\'')?.strip_suffix('\'')?;
-        Some(value.to_string())
-    })
+    let prefix = format!("{name}=");
+    let mut values = content
+        .lines()
+        .filter_map(|line| line.strip_prefix(&prefix));
+    let value = values.next()?;
+    if values.next().is_some() {
+        return None;
+    }
+    Some(value.strip_prefix('\'')?.strip_suffix('\'')?.to_owned())
 }
 
 fn is_safe_release_byte(byte: u8) -> bool {
@@ -260,10 +360,11 @@ fn is_safe_release_byte(byte: u8) -> bool {
 fn discover_power(backend: &impl DiscoveryBackend) -> Result<(bool, Option<u8>), DiscoverError> {
     let entries = match backend.read_dir(Path::new("/sys/class/power_supply")) {
         Ok(entries) => entries,
-        Err(_) => return Ok((false, None)),
+        Err(_) => return Err(DiscoverError::InvalidPowerState),
     };
     let mut batteries = Vec::new();
     let mut external_power_online = false;
+    let mut unknown_battery = false;
     for entry in entries {
         if !entry
             .bytes()
@@ -272,7 +373,9 @@ fn discover_power(backend: &impl DiscoveryBackend) -> Result<(bool, Option<u8>),
             return Err(DiscoverError::InvalidPowerState);
         }
         let base = Path::new("/sys/class/power_supply").join(&entry);
-        let kind = backend.read(&base.join("type")).unwrap_or_default();
+        let kind = backend
+            .read(&base.join("type"))
+            .map_err(|_| DiscoverError::InvalidPowerState)?;
         if kind.trim() == "Battery" {
             if let Ok(capacity) = backend.read(&base.join("capacity")) {
                 let percent = capacity
@@ -282,12 +385,17 @@ fn discover_power(backend: &impl DiscoveryBackend) -> Result<(bool, Option<u8>),
                     .filter(|value| *value <= 100)
                     .ok_or(DiscoverError::InvalidPowerState)?;
                 batteries.push(percent);
+            } else {
+                unknown_battery = true;
             }
         } else if matches!(kind.trim(), "Mains" | "USB" | "USB_C") {
             external_power_online |= backend
                 .read(&base.join("online"))
                 .is_ok_and(|value| value.trim() == "1");
         }
+    }
+    if unknown_battery {
+        return Ok((!external_power_online, None));
     }
     if batteries.is_empty() {
         return Ok((false, None));
@@ -491,7 +599,7 @@ mod tests {
         };
         fixture.files.insert(
             "/usr/lib/lyra-os/product-release".into(),
-            "LYRA_ARCHITECTURE='x86_64'\nLYRA_VERSION_ID='1.0'\nLYRA_BUILD_ID='lyra-release-1.0'\n"
+            "LYRA_EDITION='desktop'\nLYRA_ARCHITECTURE='x86_64'\nLYRA_VERSION_ID='1.0'\nLYRA_BUILD_ID='lyra-release-1.0'\n"
                 .into(),
         );
         fixture
@@ -523,7 +631,58 @@ mod tests {
                 },
             );
         }
+        fixture.directories.insert("/sys/firmware".into(), vec![]);
+        for target in ["/", "/home"] {
+            fixture.commands.insert(format!("findmnt --json --target {target} --output TARGET,OPTIONS,MAJ:MIN"), CommandOutput {
+                success: true,
+                stdout: serde_json::json!({"filesystems":[{"target":target,"options":if target == "/" {"rw,subvolid=256"} else {"rw,subvolid=257"},"maj:min":"0:30"}]}).to_string(),
+            });
+        }
         fixture
+    }
+
+    #[test]
+    fn home_bind_mount_of_root_is_not_rollback_isolation() {
+        let root = Mount {
+            target: "/".into(),
+            options: "rw,subvolid=256".into(),
+            device: "0:30".into(),
+        };
+        let mut home = Mount {
+            target: "/home".into(),
+            options: root.options.clone(),
+            device: root.device.clone(),
+        };
+        assert!(!home_isolated(&root, &home));
+        home.options = "rw,subvolid=257".into();
+        assert!(home_isolated(&root, &home));
+        home.options = "rw".into();
+        assert!(!home_isolated(&root, &home));
+        home.device = "8:2".into();
+        assert!(home_isolated(&root, &home));
+        home.target = "/".into();
+        assert!(!home_isolated(&root, &home));
+    }
+
+    #[test]
+    fn missing_battery_capacity_cannot_look_like_external_power() {
+        let mut host = fixture();
+        host.directories
+            .insert("/sys/class/power_supply".into(), vec!["BAT0".into()]);
+        host.files.insert(
+            "/sys/class/power_supply/BAT0/type".into(),
+            "Battery\n".into(),
+        );
+        let facts = discover_host(&host).unwrap();
+        assert!(facts.on_battery);
+        assert_eq!(facts.battery_percent, None);
+        assert!(
+            !crate::evaluate_preflight(&facts, crate::PreflightPolicy::default())
+                .blockers
+                .is_empty()
+        );
+        host.directories.remove("/sys/class/power_supply");
+        assert_eq!(discover_host(&host), Err(DiscoverError::InvalidPowerState));
     }
 
     #[test]
@@ -620,7 +779,7 @@ mod tests {
         let mut fixture = fixture();
         fixture.files.insert(
             "/usr/lib/lyra-os/product-release".into(),
-            "LYRA_ARCHITECTURE='x86_64'\nLYRA_VERSION_ID='$(touch /tmp/no)'\nLYRA_BUILD_ID='lyra-release-1.0'\n".into(),
+            "LYRA_EDITION='desktop'\nLYRA_ARCHITECTURE='x86_64'\nLYRA_VERSION_ID='$(touch /tmp/no)'\nLYRA_BUILD_ID='lyra-release-1.0'\n".into(),
         );
         assert_eq!(discover_host(&fixture), Err(DiscoverError::InvalidRelease));
     }

@@ -5,7 +5,33 @@ use sha2::{Digest, Sha256};
 
 use crate::{OperationKind, ReleaseIdentity};
 
-pub const PLAN_SCHEMA_VERSION: u32 = 2;
+pub const PLAN_SCHEMA_VERSION: u32 = 3;
+
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct InstalledPackage {
+    pub name: String,
+    pub version: String,
+    pub architecture: String,
+    pub vendor: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct InventoryReport {
+    pub schema_version: u32,
+    pub installed_packages: Vec<InstalledPackage>,
+    pub configuration_artifacts: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct StorageFacts {
+    pub root_writable: bool,
+    pub home_isolated: bool,
+    pub boot_available_bytes: u64,
+    pub esp_available_bytes: Option<u64>,
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -34,6 +60,10 @@ pub struct HostFacts {
     pub secure_boot_enabled: Option<bool>,
     pub repositories: Vec<RepositoryFact>,
     pub held_packages: Vec<String>,
+    #[serde(default)]
+    pub installed_packages: Vec<InstalledPackage>,
+    #[serde(default)]
+    pub storage: Option<StorageFacts>,
     pub orphaned_packages: Vec<String>,
 }
 
@@ -60,6 +90,11 @@ impl Default for PreflightPolicy {
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum PreflightIssue {
+    StorageLayoutUnknown,
+    RootNotWritable,
+    HomeNotIsolated,
+    InsufficientBootSpace,
+    InsufficientEspSpace,
     UnsupportedEdition,
     UnsupportedArchitecture,
     RootNotBtrfs,
@@ -99,6 +134,26 @@ impl PreflightReport {
 
 pub fn evaluate_preflight(facts: &HostFacts, policy: PreflightPolicy) -> PreflightReport {
     let mut blockers = Vec::new();
+    match &facts.storage {
+        None => blockers.push(PreflightIssue::StorageLayoutUnknown),
+        Some(storage) => {
+            if !storage.root_writable {
+                blockers.push(PreflightIssue::RootNotWritable);
+            }
+            if !storage.home_isolated {
+                blockers.push(PreflightIssue::HomeNotIsolated);
+            }
+            if storage.boot_available_bytes < 256 * 1024 * 1024 {
+                blockers.push(PreflightIssue::InsufficientBootSpace);
+            }
+            if storage
+                .esp_available_bytes
+                .is_some_and(|bytes| bytes < 32 * 1024 * 1024)
+            {
+                blockers.push(PreflightIssue::InsufficientEspSpace);
+            }
+        }
+    }
     if facts.release.edition != "desktop" {
         blockers.push(PreflightIssue::UnsupportedEdition);
     }
@@ -197,6 +252,8 @@ pub struct UpgradePlan {
     pub metadata_valid_repositories: Vec<String>,
     pub third_party_repositories: Vec<String>,
     pub held_packages: Vec<String>,
+    #[serde(default)]
+    pub installed_packages: Vec<InstalledPackage>,
     pub orphaned_packages: Vec<String>,
     pub package_changes: Vec<crate::PackageChange>,
     pub reboot_required: bool,
@@ -277,6 +334,11 @@ pub fn build_plan(
         metadata_valid_repositories,
         third_party_repositories: report.third_party_repositories.clone(),
         held_packages: report.held_packages.clone(),
+        installed_packages: {
+            let mut packages = facts.installed_packages.clone();
+            packages.sort();
+            packages
+        },
         orphaned_packages: report.orphaned_packages.clone(),
         package_changes: {
             let mut changes = solver.changes.clone();
@@ -297,6 +359,39 @@ fn is_sha256(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unchanged_packages_are_part_of_the_confirmed_inventory() {
+        let mut facts = healthy_facts();
+        let report = evaluate_preflight(&facts, PreflightPolicy::default());
+        let before = build_plan(
+            OperationKind::UpdateWithinRelease,
+            &facts,
+            &report,
+            None,
+            None,
+            &successful_solver(),
+        )
+        .unwrap();
+        facts.installed_packages.push(InstalledPackage {
+            name: "personal-application".into(),
+            version: "1-1".into(),
+            architecture: "noarch".into(),
+            vendor: "Third party".into(),
+        });
+        let after = build_plan(
+            OperationKind::UpdateWithinRelease,
+            &facts,
+            &report,
+            None,
+            None,
+            &successful_solver(),
+        )
+        .unwrap();
+        assert_ne!(before.sha256().unwrap(), after.sha256().unwrap());
+        assert!(after.package_changes.is_empty());
+        assert_eq!(after.installed_packages.len(), 1);
+    }
 
     fn healthy_facts() -> HostFacts {
         HostFacts {
@@ -325,6 +420,13 @@ mod tests {
                 signing_key_trusted: true,
             }],
             held_packages: vec![],
+            installed_packages: vec![],
+            storage: Some(crate::StorageFacts {
+                root_writable: true,
+                home_isolated: true,
+                boot_available_bytes: 1024 * 1024 * 1024,
+                esp_available_bytes: Some(128 * 1024 * 1024),
+            }),
             orphaned_packages: vec![],
         }
     }

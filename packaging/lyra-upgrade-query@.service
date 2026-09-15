@@ -1,0 +1,30 @@
+[Unit]
+Description=Read-only Lyra Upgrade status for a local caller
+
+[Service]
+ExecStart=/usr/libexec/lyra-upgrade-service --query-connection
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+RuntimeMaxSec=15
+TimeoutStopSec=2
+KillMode=control-group
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH
+SystemCallFilter=@system-service
+SystemCallFilter=~@mount @reboot @swap @module @raw-io
+UMask=0077
+MemoryMax=96M
+TasksMax=4

@@ -210,6 +210,13 @@ mod tests {
                 signing_key_trusted: true,
             }],
             held_packages: vec![],
+            installed_packages: vec![],
+            storage: Some(crate::StorageFacts {
+                root_writable: true,
+                home_isolated: true,
+                boot_available_bytes: 1024 * 1024 * 1024,
+                esp_available_bytes: Some(128 * 1024 * 1024),
+            }),
             orphaned_packages: vec![],
         }
     }

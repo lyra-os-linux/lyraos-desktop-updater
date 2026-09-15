@@ -8,10 +8,18 @@ fn main() {
         eprintln!("usage: lyra-upgrade [inspect]");
         std::process::exit(2);
     }
-    let facts = match discover_host(&SystemBackend) {
+    let mut facts = match discover_host(&SystemBackend) {
         Ok(facts) => facts,
         Err(error) => {
             eprintln!("host discovery failed: {error:?}");
+            std::process::exit(1);
+        }
+    };
+    facts.installed_packages = match lyra_upgrade_service::vendor_metadata::installed_packages(None)
+    {
+        Ok(packages) => packages,
+        Err(error) => {
+            eprintln!("package inventory failed: {error:?}");
             std::process::exit(1);
         }
     };

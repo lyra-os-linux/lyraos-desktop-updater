@@ -48,9 +48,19 @@
       </div>
       <ol id="phases" class="phases"></ol>
       <div id="plan-summary" class="plan-summary" hidden></div>
+      <div id="plan-review" hidden>
+        <p data-i18n="snapshot_scope"></p>
+        <label id="backup-confirmation" hidden><input id="backup-ack" type="checkbox"><span data-i18n="backup_ack"></span></label>
+        <details><summary data-i18n="review_packages"></summary><div id="package-plan"></div></details>
+        <details><summary data-i18n="review_repositories"></summary><div id="repository-plan"></div></details>
+      </div>
+      <pre id="post-report" hidden></pre>
+      <p id="release-status" role="status"></p>
       <p id="error" class="error" role="alert"></p>
       <div class="actions">
         <button id="check" class="primary" data-i18n="check">Check</button>
+        <button id="check-release" class="secondary" data-i18n="check_release">Check for a new version</button>
+        <button id="plan-release" class="primary" data-i18n="plan_release" hidden>Review version upgrade</button>
         <button id="confirm" class="primary" data-i18n="confirm" hidden>Confirm update</button>
         <button id="restart" class="primary" data-i18n="restart" hidden>Restart now</button>
         <button id="rollback" class="primary" data-i18n="rollback" hidden>Restore snapshot</button>

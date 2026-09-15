@@ -7,6 +7,7 @@ mod discovery;
 mod manifest;
 mod persistence;
 mod preflight;
+pub use preflight::StorageFacts;
 pub mod recovery;
 mod sanitize;
 mod solver;
@@ -19,8 +20,8 @@ pub use manifest::{
 };
 pub use persistence::{PersistenceError, load_state, save_state};
 pub use preflight::{
-    HostFacts, PlanError, PreflightIssue, PreflightPolicy, PreflightReport, RepositoryFact,
-    UpgradePlan, build_plan, evaluate_preflight,
+    HostFacts, InstalledPackage, InventoryReport, PlanError, PreflightIssue, PreflightPolicy,
+    PreflightReport, RepositoryFact, UpgradePlan, build_plan, evaluate_preflight,
 };
 pub use sanitize::{SanitizedLine, sanitize_technical_line};
 pub use solver::{

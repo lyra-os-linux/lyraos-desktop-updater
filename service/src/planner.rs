@@ -1,8 +1,6 @@
-use std::process::{Command, Stdio};
-
 use lyra_upgrade_core::{
-    OperationKind, PlanError, PreflightPolicy, ReleaseManifest, SolverPolicy, SystemBackend,
-    build_plan, discover_host, evaluate_solver_preflight,
+    OperationKind, PlanError, PreflightPolicy, ReleaseManifest, SolverPolicy, build_plan,
+    discover_host, evaluate_solver_preflight,
 };
 use lyra_upgrade_protocol::PlannedUpdate;
 use sha2::{Digest, Sha256};
@@ -10,7 +8,7 @@ use sha2::{Digest, Sha256};
 use crate::manifest_fetch::{FetchError, fetch_repository_key};
 use crate::repository_context::{PreparedDiscovery, RepositoryContext};
 use crate::solver_xml::{SolverXmlError, parse_solver_xml};
-use crate::vendor_metadata::{VendorMetadataError, enrich_solver_vendors};
+use crate::vendor_metadata::{VendorMetadataError, enrich_solver_vendors_at};
 
 #[derive(Debug)]
 pub enum PlannerError {
@@ -27,9 +25,16 @@ pub enum PlannerError {
 }
 
 pub fn plan_update_with_cached_metadata() -> Result<PlannedUpdate, PlannerError> {
-    let facts = discover_host(&SystemBackend).map_err(PlannerError::Discovery)?;
-    let output = Command::new("zypper")
-        .args([
+    let simulation = crate::simulation::Simulation::new(true).map_err(PlannerError::Spawn)?;
+    let mut facts = discover_host(&PreparedDiscovery {
+        context: &simulation.context,
+    })
+    .map_err(PlannerError::Discovery)?;
+    facts.installed_packages = crate::vendor_metadata::installed_packages(Some(&simulation.root))
+        .map_err(PlannerError::VendorMetadata)?;
+    let output = simulation
+        .context
+        .output(&[
             "--xmlout",
             "--non-interactive",
             "--no-refresh",
@@ -41,11 +46,6 @@ pub fn plan_update_with_cached_metadata() -> Result<PlannedUpdate, PlannerError>
             "--no-allow-arch-change",
             "--no-allow-vendor-change",
         ])
-        .env_clear()
-        .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
-        .env("LC_ALL", "C")
-        .stdin(Stdio::null())
-        .output()
         .map_err(PlannerError::Spawn)?;
     if !output.status.success() {
         return Err(PlannerError::SolverExit {
@@ -62,7 +62,7 @@ pub fn plan_update_with_cached_metadata() -> Result<PlannedUpdate, PlannerError>
         .collect();
     let mut solver =
         parse_solver_xml(&xml, metadata_valid_repositories, 0).map_err(PlannerError::SolverXml)?;
-    enrich_solver_vendors(&mut solver, std::path::Path::new("/var/cache/zypp/raw"))
+    enrich_solver_vendors_at(&mut solver, &simulation.context.raw, Some(&simulation.root))
         .map_err(PlannerError::VendorMetadata)?;
     let preflight = evaluate_solver_preflight(
         &facts,
@@ -94,14 +94,11 @@ pub fn plan_update_with_cached_metadata() -> Result<PlannedUpdate, PlannerError>
 }
 
 pub fn plan_release_upgrade(manifest: &ReleaseManifest) -> Result<PlannedUpdate, PlannerError> {
-    let simulation = tempfile::Builder::new()
-        .prefix("lyra-upgrade-solver-")
-        .tempdir()
-        .map_err(PlannerError::Spawn)?;
-    let context = RepositoryContext::prepared(simulation.path());
+    let simulation = crate::simulation::Simulation::new(false).map_err(PlannerError::Spawn)?;
+    let context = &simulation.context;
     let repos_dir = &context.repos;
     let raw_dir = &context.raw;
-    let keys_dir = simulation.path().join("keys");
+    let keys_dir = simulation.root.join("keys");
     std::fs::create_dir_all(repos_dir).map_err(PlannerError::Spawn)?;
     std::fs::create_dir_all(&keys_dir).map_err(PlannerError::Spawn)?;
     for repository in &manifest.repositories {
@@ -120,7 +117,7 @@ pub fn plan_release_upgrade(manifest: &ReleaseManifest) -> Result<PlannedUpdate,
         )
         .map_err(PlannerError::Spawn)?;
     }
-    let refresh = run_with_simulation(&context, &["refresh"])?;
+    let refresh = run_with_simulation(context, &["refresh"])?;
     if !refresh.status.success() {
         return Err(PlannerError::SolverExit {
             code: refresh.status.code(),
@@ -128,7 +125,7 @@ pub fn plan_release_upgrade(manifest: &ReleaseManifest) -> Result<PlannedUpdate,
         });
     }
     let dry_run = run_with_simulation(
-        &context,
+        context,
         &[
             "--xmlout",
             "--no-refresh",
@@ -147,8 +144,10 @@ pub fn plan_release_upgrade(manifest: &ReleaseManifest) -> Result<PlannedUpdate,
             stderr: String::from_utf8_lossy(&dry_run.stderr).into_owned(),
         });
     }
-    let facts =
-        discover_host(&PreparedDiscovery { context: &context }).map_err(PlannerError::Discovery)?;
+    let mut facts =
+        discover_host(&PreparedDiscovery { context }).map_err(PlannerError::Discovery)?;
+    facts.installed_packages = crate::vendor_metadata::installed_packages(Some(&simulation.root))
+        .map_err(PlannerError::VendorMetadata)?;
     let metadata = manifest
         .repositories
         .iter()
@@ -156,7 +155,8 @@ pub fn plan_release_upgrade(manifest: &ReleaseManifest) -> Result<PlannedUpdate,
         .collect();
     let mut solver = parse_solver_xml(&String::from_utf8_lossy(&dry_run.stdout), metadata, 0)
         .map_err(PlannerError::SolverXml)?;
-    enrich_solver_vendors(&mut solver, raw_dir).map_err(PlannerError::VendorMetadata)?;
+    enrich_solver_vendors_at(&mut solver, raw_dir, Some(&simulation.root))
+        .map_err(PlannerError::VendorMetadata)?;
     let preflight = evaluate_solver_preflight(
         &facts,
         PreflightPolicy {
@@ -195,12 +195,9 @@ fn run_with_simulation(
     context: &RepositoryContext,
     arguments: &[&str],
 ) -> Result<std::process::Output, PlannerError> {
-    context
-        .command()
-        .arg("--non-interactive")
-        .args(arguments)
-        .output()
-        .map_err(PlannerError::Spawn)
+    let mut args = vec!["--non-interactive"];
+    args.extend_from_slice(arguments);
+    context.output(&args).map_err(PlannerError::Spawn)
 }
 
 /// Shared authorization boundary for staging and the offline executor.

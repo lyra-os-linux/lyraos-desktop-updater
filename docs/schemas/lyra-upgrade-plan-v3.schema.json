@@ -1,0 +1,202 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "operation",
+    "source",
+    "target",
+    "manifest_sha256",
+    "required_bytes",
+    "facts",
+    "repositories",
+    "metadata_valid_repositories",
+    "third_party_repositories",
+    "held_packages",
+    "installed_packages",
+    "orphaned_packages",
+    "package_changes",
+    "reboot_required"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 3
+    },
+    "operation": {
+      "enum": [
+        "UpdateWithinRelease",
+        "ReleaseUpgrade"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "edition",
+        "architecture",
+        "build_id"
+      ],
+      "properties": {
+        "version": {
+          "type": "string"
+        },
+        "edition": {
+          "type": "string"
+        },
+        "architecture": {
+          "type": "string"
+        },
+        "build_id": {
+          "type": "string"
+        }
+      }
+    },
+    "target": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "version",
+            "edition",
+            "architecture",
+            "build_id"
+          ],
+          "properties": {
+            "version": {
+              "type": "string"
+            },
+            "edition": {
+              "type": "string"
+            },
+            "architecture": {
+              "type": "string"
+            },
+            "build_id": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "manifest_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "required_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 18446744073709551615
+    },
+    "facts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "repositories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "alias",
+          "enabled",
+          "official",
+          "metadata_valid",
+          "signing_key_trusted"
+        ],
+        "properties": {
+          "alias": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "official": {
+            "type": "boolean"
+          },
+          "metadata_valid": {
+            "type": "boolean"
+          },
+          "signing_key_trusted": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "metadata_valid_repositories": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "third_party_repositories": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "held_packages": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "installed_packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "version",
+          "architecture",
+          "vendor"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "architecture": {
+            "type": "string"
+          },
+          "vendor": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "orphaned_packages": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "package_changes": {
+      "type": "array",
+      "items": {
+        "$ref": "lyra-upgrade-solver-v1.schema.json#/$defs/package_change"
+      }
+    },
+    "reboot_required": {
+      "type": "boolean"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lyraos.com.br/schemas/lyra-upgrade-plan-v3.schema.json",
+  "title": "Lyra Upgrade emitted plan v3"
+}
