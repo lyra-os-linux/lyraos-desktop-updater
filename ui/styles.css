@@ -182,3 +182,10 @@ button { border: 0; border-radius: 7px; padding: 11px 16px; cursor: pointer }
   header { gap: 15px }
   h1 { font-size: 20px }
 }
+
+#plan-review { margin-block: 1rem; }
+#plan-review details { margin-block: .75rem; }
+#package-plan { max-height: 20rem; overflow-y: auto; }
+#repository-plan, #post-report { white-space: pre-wrap; overflow-wrap: anywhere; }
+#backup-confirmation { display: flex; align-items: start; gap: .5rem; }
+#backup-confirmation[hidden] { display: none; }

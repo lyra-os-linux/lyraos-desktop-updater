@@ -15,6 +15,13 @@ use sha2::{Digest, Sha256};
 const STATE_ROOT: &str = "/var/lib/lyra-upgrade/operations";
 
 fn main() {
+    let _transaction = match lyra_upgrade_service::executor::TransactionLock::acquire() {
+        Ok(lock) => lock,
+        Err(_) => {
+            eprintln!("lyra-upgrade-offline: transaction busy");
+            std::process::exit(1);
+        }
+    };
     if let Err(error) = run() {
         eprintln!("lyra-upgrade-offline: {error}");
         mark_recovery();
@@ -42,6 +49,23 @@ fn run() -> Result<(), String> {
     );
     if state.manifest_sha256.as_deref() != Some(&manifest_hash) {
         return Err("persisted manifest hash mismatch".into());
+    }
+    let verified = lyra_upgrade_service::manifest_fetch::verify_manifest_files(
+        &operation_dir.join("manifest.signed.json"),
+        &operation_dir.join("manifest.signed.json.asc"),
+        &state.source,
+        lyra_upgrade_service::manifest_fetch::read_last_manifest_sequence(
+            &lyra_upgrade_service::manifest_fetch::manifest_sequence_path(),
+        )
+        .map_err(|_| "invalid manifest replay record")?,
+        lyra_upgrade_service::manifest_fetch::read_release_channel(Path::new(
+            lyra_upgrade_service::manifest_fetch::RELEASE_CHANNEL_PATH,
+        ))
+        .map_err(|_| "invalid release channel")?,
+    )
+    .map_err(|_| "offline manifest authentication failed")?;
+    if verified.manifest != manifest {
+        return Err("signed manifest differs from staged plan".into());
     }
 
     save_state(Path::new(STATE_ROOT), &state).map_err(|_| "cannot persist offline state")?;
@@ -125,8 +149,10 @@ fn revalidate_plan(
         return Err("offline dry-run failed".into());
     }
     let context = RepositoryContext::prepared(operation_dir);
-    let facts = discover_host(&PreparedDiscovery { context: &context })
+    let mut facts = discover_host(&PreparedDiscovery { context: &context })
         .map_err(|error| format!("offline discovery failed: {error:?}"))?;
+    facts.installed_packages = lyra_upgrade_service::vendor_metadata::installed_packages(None)
+        .map_err(|error| format!("offline inventory failed: {error:?}"))?;
     let metadata = manifest
         .repositories
         .iter()

@@ -1,0 +1,13 @@
+[Unit]
+Description=Read-only Lyra Upgrade status queries
+
+[Socket]
+ListenStream=/run/lyra-upgrade-query.socket
+SocketMode=0666
+Accept=yes
+MaxConnections=16
+MaxConnectionsPerSource=4
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

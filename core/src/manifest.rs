@@ -104,13 +104,18 @@ pub fn validate_manifest_route(
     {
         return Err(ManifestError::NotAvailable);
     }
-    if manifest.source.version != installed.version
-        || manifest.source.edition != installed.edition
-        || manifest.source.architecture != installed.architecture
-    {
+    if &manifest.source != installed {
         return Err(ManifestError::SourceMismatch);
     }
-    if manifest.target.edition != "desktop" || manifest.target.architecture != "x86_64" {
+    if manifest.target.edition != "desktop"
+        || manifest.target.architecture != "x86_64"
+        || manifest.target.build_id.is_empty()
+        || !manifest
+            .target
+            .build_id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'))
+    {
         return Err(ManifestError::UnsupportedTarget);
     }
     if !valid_version_transition(&installed.version, &manifest.target.version) {
@@ -130,22 +135,22 @@ pub fn validate_manifest_route(
     if current_updater < minimum_updater {
         return Err(ManifestError::UpdaterTooOld);
     }
+    if manifest.repositories.is_empty() {
+        return Err(ManifestError::InvalidRepository);
+    }
     let mut aliases = std::collections::BTreeSet::new();
     for repository in &manifest.repositories {
         if !valid_alias(&repository.alias)
             || !valid_https_url(&repository.base_url)
             || !valid_https_url(&repository.signing_key_url)
+            || !(1..=200).contains(&repository.priority)
         {
             return Err(ManifestError::InvalidRepository);
         }
         if !aliases.insert(&repository.alias) {
             return Err(ManifestError::DuplicateRepository);
         }
-        let fingerprint: String = repository
-            .signing_key_fingerprint
-            .chars()
-            .filter(|character| !character.is_ascii_whitespace())
-            .collect();
+        let fingerprint = &repository.signing_key_fingerprint;
         if fingerprint.len() != 40
             || !fingerprint
                 .bytes()
@@ -161,6 +166,10 @@ pub fn validate_manifest_route(
             !crate::valid_vendor(&transition.from) || !crate::valid_vendor(&transition.to)
         })
         || manifest.minimum_free_space_bytes == 0
+        || manifest
+            .allowed_removals
+            .iter()
+            .any(|name| !valid_package(name))
         || manifest.lockstep_packages.iter().any(|group| {
             group.len() < 2 || group.iter().any(|package| !valid_package(package)) || {
                 let unique: std::collections::BTreeSet<_> = group.iter().collect();
@@ -225,10 +234,15 @@ fn is_legacy_calendar_version(value: &str) -> bool {
 }
 
 fn valid_https_url(value: &str) -> bool {
-    value.starts_with("https://")
-        && !value.contains('@')
-        && !value.contains(['?', '#'])
-        && value.bytes().all(|byte| !byte.is_ascii_control())
+    !value.chars().any(char::is_whitespace)
+        && url::Url::parse(value).is_ok_and(|url| {
+            url.scheme() == "https"
+                && url.host_str().is_some()
+                && url.username().is_empty()
+                && url.password().is_none()
+                && url.query().is_none()
+                && url.fragment().is_none()
+        })
 }
 
 fn valid_alias(value: &str) -> bool {
@@ -248,6 +262,44 @@ fn valid_package(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn route_is_bound_to_exact_build_and_repository_policy() {
+        let valid = manifest();
+        let mut installed = identity("1.0");
+        installed.build_id = "different-build".into();
+        assert_eq!(
+            validate_manifest_route(
+                &valid,
+                &installed,
+                None,
+                "0.2.3",
+                ManifestChannelPolicy::Stable
+            ),
+            Err(ManifestError::SourceMismatch)
+        );
+        for mutate in [
+            (|m: &mut ReleaseManifest| m.repositories.clear()) as fn(&mut ReleaseManifest),
+            |m| m.repositories[0].priority = 0,
+            |m| m.repositories[0].base_url = "https://".into(),
+            |m| m.repositories[0].signing_key_fingerprint.push(' '),
+            |m| m.allowed_removals.push("--all".to_owned() + "\nother"),
+            |m| m.target.build_id.clear(),
+        ] {
+            let mut candidate = valid.clone();
+            mutate(&mut candidate);
+            assert!(
+                validate_manifest_route(
+                    &candidate,
+                    &identity("1.0"),
+                    None,
+                    "0.2.3",
+                    ManifestChannelPolicy::Stable
+                )
+                .is_err()
+            );
+        }
+    }
 
     fn identity(version: &str) -> ReleaseIdentity {
         ReleaseIdentity {

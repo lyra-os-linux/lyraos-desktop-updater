@@ -9,6 +9,7 @@ use lyra_upgrade_core::{OperationState, OperationStateRecord, load_state};
 #[derive(Default)]
 pub struct PendingScan {
     pub operation: Option<(PathBuf, OperationStateRecord)>,
+    pub interrupted: Vec<OperationStateRecord>,
     pub invalid_entries: usize,
 }
 
@@ -103,6 +104,12 @@ pub fn pending_operation(
             OperationState::AwaitingReboot | OperationState::VerifyingBoot
         ) {
             candidates.push((entry.path(), state));
+        } else if (state.state != OperationState::ReadyToReboot
+            && interrupted_state(state.state).is_some())
+            || (state.state == OperationState::ReadyToReboot
+                && fs::read_link("/system-update").ok().as_ref() != Some(&entry.path()))
+        {
+            scan.interrupted.push(state);
         }
     }
     candidates.sort_by(|left, right| {
@@ -114,6 +121,19 @@ pub fn pending_operation(
     });
     scan.operation = candidates.into_iter().next();
     Ok(scan)
+}
+
+/// Called at boot under the global transaction lock. Never retry a package
+/// transaction automatically: a crash may have happened after its last write.
+pub fn interrupted_state(state: OperationState) -> Option<OperationState> {
+    match state {
+        OperationState::Downloading => Some(OperationState::Failed),
+        OperationState::Snapshotting
+        | OperationState::Applying
+        | OperationState::ApplyingOffline
+        | OperationState::ReadyToReboot => Some(OperationState::NeedsRecovery),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -334,5 +354,29 @@ mod tests {
         let link = fixture.0.join("link");
         symlink(&fixture.0, &link).unwrap();
         assert!(pending_operation(&link, |_, _| panic!()).is_err());
+    }
+
+    #[test]
+    fn interrupted_transactions_are_recovery_work_not_successful_boots() {
+        for (phase, expected) in [
+            (OperationState::Downloading, OperationState::Failed),
+            (OperationState::Snapshotting, OperationState::NeedsRecovery),
+            (OperationState::Applying, OperationState::NeedsRecovery),
+            (
+                OperationState::ApplyingOffline,
+                OperationState::NeedsRecovery,
+            ),
+        ] {
+            let fixture = Fixture::new();
+            let mut interrupted = state(ID);
+            interrupted.state = phase;
+            save_state(&fixture.0, &interrupted).unwrap();
+            let (scan, _) = fixture.scan();
+            assert!(scan.operation.is_none());
+            assert_eq!(scan.interrupted, [interrupted]);
+            assert_eq!(interrupted_state(phase), Some(expected));
+        }
+        assert_eq!(interrupted_state(OperationState::Completed), None);
+        assert_eq!(interrupted_state(OperationState::AwaitingReboot), None);
     }
 }

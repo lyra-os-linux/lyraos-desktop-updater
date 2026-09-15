@@ -28,15 +28,18 @@ operação previamente registrada.
 
 O executável `zypper` do Leap exige root mesmo para `update --dry-run`; portanto
 ele não é usado pelo core como atalho privilegiado. A implementação do solver
-deve usar libzypp/libsolv em leitura ou uma raiz de simulação isolada e gravável
-pelo usuário. Seu resultado atravessa o contrato tipado de
+usa uma cópia temporária do RPMDB, configuração e cache zypp. `unshare --user
+--map-root-user` fornece UID 0 somente dentro do namespace para `zypper --root`.
+A indisponibilidade de namespaces bloqueia o plano; não abre Polkit como fallback. Seu resultado atravessa o contrato tipado de
 [`schemas/lyra-upgrade-solver-v1.schema.json`](schemas/lyra-upgrade-solver-v1.schema.json).
 Saída textual localizada nunca alimenta decisões.
 
-## Versão inicial do protocolo
+## Protocolo atual (v3)
 
-Requests e eventos usam `protocol_version: 1`. O envelope inicial aceita:
+Requests usam `protocol_version: 3`; respostas e eventos pertencem à mesma conexão tipada. O envelope aceita:
 
+- `CheckRelease`: obtém uma oferta assinada ou cache ainda válido para exibição;
+- `ReadTrustState`: lê o contador antirreplay pelo broker protegido;
 - `Inspect`: consulta fatos e bloqueios, sem Polkit;
 - `PlanUpdate`: calcula update dentro da release, sem escrita;
 - `PlanReleaseUpgrade`: exige manifesto autenticado e calcula migração;
@@ -45,13 +48,16 @@ Requests e eventos usam `protocol_version: 1`. O envelope inicial aceita:
 - `Cancel`: pedido cooperativo, aceito somente em estados canceláveis;
 - `AcknowledgeRecovery`: registra a escolha explícita após falha.
 
-`Start`, `Cancel` e qualquer decisão de recuperação exigem autorização do
-usuário ativo. O serviço associa a operação ao UID e à sessão que a criou; um
+`Start`, `Cancel`, `Rollback` e `KeepCurrent` exigem autorização do
+usuário ativo. `ShowDiagnostics` somente consulta. O serviço associa a operação ao UID
+obtido de Polkit; o broker de consulta obtém o UID por `SO_PEERCRED`. Um
 chamador não autorizado não lê inventário detalhado nem controla a operação.
 Requests desconhecidos ou com campos adicionais não previstos falham.
 
-O schema inicial está em
-[`schemas/lyra-upgrade-protocol-v1.schema.json`](schemas/lyra-upgrade-protocol-v1.schema.json).
+O schema atual está em
+[`schemas/lyra-upgrade-protocol-v3.schema.json`](schemas/lyra-upgrade-protocol-v3.schema.json).
+O arquivo v1 permanece histórico. Plano e inventário completo seguem
+[`schemas/lyra-upgrade-plan-v3.schema.json`](schemas/lyra-upgrade-plan-v3.schema.json).
 
 O manifesto sucessor assinado obedece ao contrato público
 [`schemas/lyra-upgrade-release-manifest-v1.schema.json`](schemas/lyra-upgrade-release-manifest-v1.schema.json).
@@ -98,7 +104,8 @@ antes da verificação pós-boot.
 
 ## Estado persistente
 
-Cada transição incrementa `sequence` e persiste:
+Consultas e planos são transitórios. Somente `Start` autenticado, após recalcular
+e comparar o plano, cria estado protegido. Cada transição persistida incrementa `sequence`:
 
 - versão do schema e UUID;
 - tipo da operação e estado atual;
@@ -203,11 +210,35 @@ script vindo do manifesto. Somente um lock global pode atravessar `Applying`.
 
 ## Retomada
 
-Ao iniciar, o serviço carrega somente diretórios regulares root-owned sob sua
-raiz fixa. Uma operação em estado não terminal é reconciliada com fatos do
-host antes de continuar. A ausência de evidência de conclusão nunca é tratada
-como sucesso. Etapas repetíveis verificam seu efeito antes de repetir; etapas
-não repetíveis transitam para `NeedsRecovery` quando o resultado é ambíguo.
+A UI retoma consultas sem autenticação. Fechar a janela não encerra os workers.
+No próximo boot, o verificador adquire o lock global e reconcilia operações:
+`Downloading` interrompido vira `Failed`; `Snapshotting`, `Applying` e
+`ApplyingOffline` interrompidos viram `NeedsRecovery`. `ReadyToReboot` sem o
+marcador esperado também exige recuperação. Não repete a aplicação. Uma queda
+do próprio serviço durante a mesma sessão pode deixar o último estado visível
+até essa reconciliação no próximo boot; isso não é uma prova de atividade nem
+uma autorização para reiniciar a transação.
+
+O broker `lyra-upgrade-query.socket` responde somente `Status` e `ReadTrustState`.
+Ele não executa solver, rede, comandos administrativos ou escritas, inclusive
+criação de locks de histórico. Valida UID do socket e mantém diretórios privados.
+A UI usa um processo `--read-only` para consultas e só inicia `pkexec` ao receber
+uma ação administrativa explícita. Limites: request 4 MiB, resposta 16 MiB,
+conexão de consulta 10 s, unidade 15 s e 16 conexões concorrentes.
+
+O cache da oferta pertence ao usuário e serve apenas para exibição. Assinatura,
+rota, sequência e validade são verificadas novamente na leitura. Planejamento,
+confirmação e staging exigem oferta atual obtida pela rede. O offline usa os
+bytes assinados retidos, revalida com a chave empacotada e recusa expiração.
+A validade é o intervalo `[valid_from, valid_until)`.
+
+Inventários completos antes/depois incluem versões, arquiteturas e vendors de
+RPMs e os caminhos `.rpmnew`/`.rpmsave` de `/etc`, sem ler configurações nem
+arquivos pessoais. A conclusão compara pacotes mantidos e propostos; versões
+antigas de pacotes atualizados podem permanecer pela política multiversion.
+Rollback compara o inventário de origem. Snapshot do sistema não é backup
+pessoal: o plano exige `/home` em outro dispositivo ou subvolume, e a UI exige
+reconhecimento do aviso de backup antes de uma migração de versão.
 
 ## Suporte e compatibilidade
 
@@ -218,3 +249,9 @@ não repetíveis transitam para `NeedsRecovery` quando o resultado é ambíguo.
   o próprio Lyra Upgrade;
 - remoção do pacote desativa suas unidades, mas nunca remove snapshots ou
   estado de recuperação automaticamente.
+
+## Aceite e qualificação
+
+A [matriz de aceite Desktop #13](desktop-13-acceptance.md) concilia implementação,
+testes e gates externos. Os documentos de VM registram qualificações históricas
+de versões anteriores; não aprovam automaticamente o protocolo/plano v3.

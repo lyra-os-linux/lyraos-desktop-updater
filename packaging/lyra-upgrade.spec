@@ -6,7 +6,7 @@
 #
 
 Name:           lyra-upgrade
-Version:        0.2.3
+Version:        0.2.4
 Release:        0
 Summary:        Atualização recuperável do Lyra OS Desktop
 License:        GPL-3.0-only
@@ -20,6 +20,7 @@ Source3:        release-signing-key.gpg
 BuildRequires:  cargo
 BuildRequires:  cargo-packaging
 BuildRequires:  desktop-file-utils
+BuildRequires:  gnupg
 BuildRequires:  pkgconfig(gtk+-3.0)
 BuildRequires:  pkgconfig(javascriptcoregtk-4.1)
 BuildRequires:  pkgconfig(webkit2gtk-4.1)
@@ -85,6 +86,13 @@ install -Dm0644 packaging/lyra-upgrade-verify.service \
     %{buildroot}%{_unitdir}/lyra-upgrade-verify.service
 install -Dm0644 packaging/lyra-upgrade-probe.service \
     %{buildroot}%{_unitdir}/lyra-upgrade-probe.service
+install -Dm0644 packaging/lyra-upgrade-query.socket \
+    %{buildroot}%{_unitdir}/lyra-upgrade-query.socket
+install -Dm0644 packaging/lyra-upgrade-query@.service \
+    %{buildroot}%{_unitdir}/lyra-upgrade-query@.service
+install -d %{buildroot}%{_unitdir}/sockets.target.wants
+ln -s %{_unitdir}/lyra-upgrade-query.socket \
+    %{buildroot}%{_unitdir}/sockets.target.wants/lyra-upgrade-query.socket
 install -Dm0644 packaging/90-lyra-refresh.conf \
     %{buildroot}%{_sysconfdir}/zypp/zypp.conf.d/90-lyra-refresh.conf
 install -Dm0644 packaging/lyra-upgrade-channel \
@@ -107,13 +115,16 @@ cargo test --offline --workspace
 desktop-file-validate %{buildroot}%{_datadir}/applications/org.lyraos.LyraUpgrade.desktop
 
 %post
-%systemd_post lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service
+%systemd_post lyra-upgrade-query.socket lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service
+if [ -d /run/systemd/system ]; then
+    systemctl start lyra-upgrade-query.socket >/dev/null 2>&1 || :
+fi
 
 %preun
-%systemd_preun lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service
+%systemd_preun lyra-upgrade-query.socket lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service
 
 %postun
-%systemd_postun_with_restart lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service
+%systemd_postun_with_restart lyra-upgrade-query.socket lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service
 
 %files
 %dir /usr/lib/lyra-upgrade
@@ -135,6 +146,10 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/org.lyraos.LyraUpgrad
 %{_unitdir}/lyra-upgrade-offline.service
 %{_unitdir}/lyra-upgrade-verify.service
 %{_unitdir}/lyra-upgrade-probe.service
+%{_unitdir}/lyra-upgrade-query.socket
+%{_unitdir}/lyra-upgrade-query@.service
+%dir %{_unitdir}/sockets.target.wants
+%{_unitdir}/sockets.target.wants/lyra-upgrade-query.socket
 %dir %{_unitdir}/system-update.target.wants
 %{_unitdir}/system-update.target.wants/lyra-upgrade-offline.service
 %{_unitdir}/multi-user.target.wants/lyra-upgrade-verify.service

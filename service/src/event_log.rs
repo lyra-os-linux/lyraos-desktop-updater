@@ -149,11 +149,19 @@ fn operation_directory(root: &Path, id: &str) -> Result<std::path::PathBuf, Even
 }
 
 fn locked(directory: &Path, exclusive: bool) -> Result<std::fs::File, EventLogError> {
+    lock_file(directory, exclusive, true)
+}
+
+fn lock_file(
+    directory: &Path,
+    exclusive: bool,
+    create: bool,
+) -> Result<std::fs::File, EventLogError> {
     // A stable inode serializes readers with append/atomic replacement.
     let file = OpenOptions::new()
         .read(true)
-        .write(true)
-        .create(true)
+        .write(create)
+        .create(create)
         .truncate(false)
         .mode(0o600)
         .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
@@ -375,8 +383,33 @@ pub fn append_event(root: &Path, id: &str, event: &OperationEvent) -> Result<(),
 }
 
 pub fn load_events(root: &Path, id: &str, after: u64) -> Result<EventHistory, EventLogError> {
+    load_events_mode(root, id, after, false)
+}
+
+pub fn load_events_read_only(
+    root: &Path,
+    id: &str,
+    after: u64,
+) -> Result<EventHistory, EventLogError> {
+    load_events_mode(root, id, after, true)
+}
+
+fn load_events_mode(
+    root: &Path,
+    id: &str,
+    after: u64,
+    read_only: bool,
+) -> Result<EventHistory, EventLogError> {
     let directory = operation_directory(root, id)?;
-    let _lock = locked(&directory, false)?;
+    let _lock = match lock_file(&directory, false, !read_only) {
+        Ok(lock) => Some(lock),
+        Err(EventLogError::Io(error))
+            if read_only && error.kind() == std::io::ErrorKind::NotFound =>
+        {
+            None
+        }
+        Err(error) => return Err(error),
+    };
     let file = match open_events(&directory.join("events.jsonl"), false) {
         Ok(file) => file,
         Err(EventLogError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {

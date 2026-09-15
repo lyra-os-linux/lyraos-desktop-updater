@@ -1,0 +1,542 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lyraos.com.br/schemas/lyra-upgrade-protocol-v3.schema.json",
+  "title": "Lyra Upgrade protocol v3 requests",
+  "description": "Wire shape. Rust additionally validates UUIDs, hashes, authorization, policy, preflight and exact authoritative plan equality. request_id is an opaque correlation string.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocol_version",
+        "request_id"
+      ],
+      "properties": {
+        "kind": {
+          "const": "Inspect"
+        },
+        "protocol_version": {
+          "const": 3
+        },
+        "request_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocol_version",
+        "request_id"
+      ],
+      "properties": {
+        "kind": {
+          "const": "CheckRelease"
+        },
+        "protocol_version": {
+          "const": 3
+        },
+        "request_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocol_version",
+        "request_id"
+      ],
+      "properties": {
+        "kind": {
+          "const": "ReadTrustState"
+        },
+        "protocol_version": {
+          "const": 3
+        },
+        "request_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocol_version",
+        "request_id"
+      ],
+      "properties": {
+        "kind": {
+          "const": "PlanUpdate"
+        },
+        "protocol_version": {
+          "const": 3
+        },
+        "request_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocol_version",
+        "request_id",
+        "manifest_sha256"
+      ],
+      "properties": {
+        "kind": {
+          "const": "PlanReleaseUpgrade"
+        },
+        "protocol_version": {
+          "const": 3
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "manifest_sha256": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocol_version",
+        "request_id",
+        "operation_id",
+        "plan_sha256",
+        "confirmed",
+        "planned"
+      ],
+      "properties": {
+        "kind": {
+          "const": "Start"
+        },
+        "protocol_version": {
+          "const": 3
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "operation_id": {
+          "type": "string"
+        },
+        "plan_sha256": {
+          "type": "string"
+        },
+        "confirmed": {
+          "type": "boolean"
+        },
+        "planned": {
+          "$ref": "#/$defs/planned"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocol_version",
+        "request_id",
+        "operation_id"
+      ],
+      "properties": {
+        "kind": {
+          "const": "Status"
+        },
+        "protocol_version": {
+          "const": 3
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "operation_id": {
+          "type": "string"
+        },
+        "after_sequence": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocol_version",
+        "request_id",
+        "operation_id"
+      ],
+      "properties": {
+        "kind": {
+          "const": "Cancel"
+        },
+        "protocol_version": {
+          "const": 3
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "operation_id": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "protocol_version",
+        "request_id",
+        "operation_id",
+        "recovery_action"
+      ],
+      "properties": {
+        "kind": {
+          "const": "AcknowledgeRecovery"
+        },
+        "protocol_version": {
+          "const": 3
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "operation_id": {
+          "type": "string"
+        },
+        "recovery_action": {
+          "enum": [
+            "ShowDiagnostics",
+            "Rollback",
+            "KeepCurrent"
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "planned": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "facts",
+        "solver",
+        "preflight",
+        "plan",
+        "plan_sha256",
+        "manifest"
+      ],
+      "properties": {
+        "facts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "release",
+            "root_filesystem",
+            "snapper_root_configured",
+            "rpm_database_healthy",
+            "package_lock_free",
+            "on_battery",
+            "available_bytes",
+            "required_download_bytes",
+            "required_transaction_bytes",
+            "required_snapshot_bytes",
+            "battery_percent",
+            "secure_boot_enabled",
+            "repositories",
+            "held_packages",
+            "orphaned_packages"
+          ],
+          "properties": {
+            "release": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version",
+                "edition",
+                "architecture",
+                "build_id"
+              ],
+              "properties": {
+                "version": {
+                  "type": "string"
+                },
+                "edition": {
+                  "type": "string"
+                },
+                "architecture": {
+                  "type": "string"
+                },
+                "build_id": {
+                  "type": "string"
+                }
+              }
+            },
+            "root_filesystem": {
+              "type": "string"
+            },
+            "snapper_root_configured": {
+              "type": "boolean"
+            },
+            "rpm_database_healthy": {
+              "type": "boolean"
+            },
+            "package_lock_free": {
+              "type": "boolean"
+            },
+            "on_battery": {
+              "type": "boolean"
+            },
+            "available_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            "required_download_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            "required_transaction_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            "required_snapshot_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            "battery_percent": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 255
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "secure_boot_enabled": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "repositories": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "alias",
+                  "enabled",
+                  "official",
+                  "metadata_valid",
+                  "signing_key_trusted"
+                ],
+                "properties": {
+                  "alias": {
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "official": {
+                    "type": "boolean"
+                  },
+                  "metadata_valid": {
+                    "type": "boolean"
+                  },
+                  "signing_key_trusted": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            },
+            "held_packages": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "installed_packages": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "version",
+                  "architecture",
+                  "vendor"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  },
+                  "architecture": {
+                    "type": "string"
+                  },
+                  "vendor": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "storage": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "root_writable",
+                    "home_isolated",
+                    "boot_available_bytes",
+                    "esp_available_bytes"
+                  ],
+                  "properties": {
+                    "root_writable": {
+                      "type": "boolean"
+                    },
+                    "home_isolated": {
+                      "type": "boolean"
+                    },
+                    "boot_available_bytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 18446744073709551615
+                    },
+                    "esp_available_bytes": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 18446744073709551615
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "orphaned_packages": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "solver": {
+          "$ref": "lyra-upgrade-solver-v1.schema.json"
+        },
+        "preflight": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "required_bytes",
+            "available_bytes",
+            "blockers",
+            "third_party_repositories",
+            "held_packages",
+            "orphaned_packages"
+          ],
+          "properties": {
+            "required_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            "available_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            "blockers": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "string",
+                  "object"
+                ]
+              }
+            },
+            "third_party_repositories": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "held_packages": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "orphaned_packages": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "plan": {
+          "$ref": "lyra-upgrade-plan-v3.schema.json"
+        },
+        "plan_sha256": {
+          "type": "string"
+        },
+        "manifest": {
+          "anyOf": [
+            {
+              "$ref": "lyra-upgrade-release-manifest-v1.schema.json"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

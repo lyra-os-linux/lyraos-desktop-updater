@@ -27,7 +27,7 @@ jobs:
             -o "Dir::Etc::sourceparts=$RUNNER_TEMP/lyra-apt-empty-sources"
           )
           sudo apt-get "${apt_options[@]}" update
-          sudo apt-get "${apt_options[@]}" install -y gzip xz-utils zstd
+          sudo apt-get "${apt_options[@]}" install -y gzip xz-utils zstd gnupg
       - name: Validate critical updater components
         run: |
           cargo test --workspace --exclude lyra-upgrade-ui --locked

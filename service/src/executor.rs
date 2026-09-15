@@ -42,6 +42,7 @@ pub enum ExecutionError {
     Busy,
     Cancelled,
     RepositoryKey(FetchError),
+    Inventory(std::io::Error),
 }
 
 impl ExecutionError {
@@ -63,6 +64,7 @@ impl ExecutionError {
             Self::Busy => "TRANSACTION_BUSY",
             Self::Cancelled => "CANCELLED",
             Self::RepositoryKey(_) => "REPOSITORY_KEY_FAILED",
+            Self::Inventory(_) => "PACKAGE_PRESERVATION_FAILED",
         }
     }
 
@@ -89,10 +91,10 @@ pub const fn failure_state(error: &ExecutionError, has_snapshot: bool) -> Operat
     }
 }
 
-pub(crate) struct TransactionLock(std::fs::File);
+pub struct TransactionLock(std::fs::File);
 
 impl TransactionLock {
-    pub(crate) fn acquire() -> Result<Self, ExecutionError> {
+    pub fn acquire() -> Result<Self, ExecutionError> {
         Self::acquire_at(std::path::Path::new("/run/lock/lyra-upgrade.lock"))
     }
 
@@ -105,8 +107,12 @@ impl TransactionLock {
             .create(true)
             .truncate(false)
             .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
             .open(path)
             .map_err(ExecutionError::Stage)?;
+        if !file.metadata().map_err(ExecutionError::Stage)?.is_file() {
+            return Err(ExecutionError::Busy);
+        }
         if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
             return Err(ExecutionError::Busy);
         }
@@ -137,7 +143,35 @@ pub fn stage_release_upgrade(
     }
     check_confirmed_release_plan(manifest, &confirmed.plan, &state.plan_sha256)
         .map_err(revalidation_error)?;
+    let verified = crate::manifest_fetch::fetch_verified_manifest(
+        &state.source,
+        crate::manifest_fetch::read_last_manifest_sequence(
+            &crate::manifest_fetch::manifest_sequence_path(),
+        )
+        .map_err(ExecutionError::RepositoryKey)?,
+        crate::manifest_fetch::read_release_channel(std::path::Path::new(
+            crate::manifest_fetch::RELEASE_CHANNEL_PATH,
+        ))
+        .map_err(ExecutionError::RepositoryKey)?,
+    )
+    .map_err(ExecutionError::RepositoryKey)?;
+    if &verified.manifest != manifest {
+        return Err(ExecutionError::PlanChanged);
+    }
     let operation_dir = state_root.join(&state.operation_id);
+    crate::inventory::save(
+        &operation_dir.join("inventory-before.json"),
+        &crate::inventory::capture().map_err(ExecutionError::Stage)?,
+    )
+    .map_err(ExecutionError::Stage)?;
+    write_private(
+        &operation_dir.join("manifest.signed.json"),
+        &verified.document,
+    )?;
+    write_private(
+        &operation_dir.join("manifest.signed.json.asc"),
+        &verified.signature,
+    )?;
     let context = RepositoryContext::prepared(&operation_dir);
     let repos_dir = &context.repos;
     let packages_dir = &context.packages;
@@ -238,6 +272,7 @@ pub fn stage_release_upgrade(
         return Err(ExecutionError::Cancelled);
     }
 
+    crate::manifest_fetch::validate_time(manifest).map_err(ExecutionError::RepositoryKey)?;
     state
         .transition_to(OperationState::Snapshotting)
         .map_err(ExecutionError::Transition)?;
@@ -285,6 +320,12 @@ fn write_private(path: &std::path::Path, content: &[u8]) -> Result<(), Execution
     file.write_all(b"\n").map_err(ExecutionError::Stage)?;
     file.sync_all().map_err(ExecutionError::Stage)?;
     fs::rename(temporary, path).map_err(ExecutionError::Stage)?;
+    fs::File::open(
+        path.parent()
+            .ok_or_else(|| ExecutionError::Stage(std::io::Error::other("missing parent")))?,
+    )
+    .and_then(|file| file.sync_all())
+    .map_err(ExecutionError::Stage)?;
     Ok(())
 }
 
@@ -301,7 +342,10 @@ fn stage_system_update(operation_dir: &std::path::Path) -> Result<(), ExecutionE
         }
         Ok(_) => Err(ExecutionError::SystemUpdateExists),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            symlink(operation_dir, marker).map_err(ExecutionError::Stage)
+            symlink(operation_dir, marker).map_err(ExecutionError::Stage)?;
+            fs::File::open("/")
+                .and_then(|directory| directory.sync_all())
+                .map_err(ExecutionError::Stage)
         }
         Err(error) => Err(ExecutionError::Stage(error)),
     }
@@ -340,6 +384,17 @@ pub fn execute_update(
     observer: &impl ExecutionObserver,
 ) -> Result<ExecutionOutcome, ExecutionError> {
     let _transaction_lock = TransactionLock::acquire()?;
+    let operation_dir = state_root.join(&state.operation_id);
+    write_private(
+        &operation_dir.join("plan.json"),
+        &serde_json::to_vec(&confirmed.plan)
+            .map_err(|error| ExecutionError::Stage(std::io::Error::other(error)))?,
+    )?;
+    crate::inventory::save(
+        &operation_dir.join("inventory-before.json"),
+        &crate::inventory::capture().map_err(ExecutionError::Stage)?,
+    )
+    .map_err(ExecutionError::Stage)?;
     state
         .transition_to(OperationState::Downloading)
         .map_err(ExecutionError::Transition)?;
@@ -368,6 +423,15 @@ pub fn execute_update(
     require_success("zypper", download).map_err(ExecutionError::Download)?;
     if observer.cancel_requested() {
         return Err(ExecutionError::Cancelled);
+    }
+
+    // Downloads can take hours; another package tool may have changed the host.
+    let mut current = plan_update_with_cached_metadata().map_err(ExecutionError::Replan)?;
+    // The fresh preflight has already checked remaining space. Downloading
+    // changes that estimate but must not change any reviewed package identity.
+    current.plan.required_bytes = confirmed.plan.required_bytes;
+    if current.plan.sha256().ok().as_deref() != Some(&confirmed.plan_sha256) {
+        return Err(ExecutionError::PlanChanged);
     }
 
     state
@@ -435,6 +499,10 @@ pub fn execute_update(
     }
 
     let reboot_required = fresh.solver.reboot_required || code == Some(102) || touches_boot;
+    let report = crate::inventory::capture().map_err(ExecutionError::Inventory)?;
+    crate::inventory::save(&operation_dir.join("inventory-after.json"), &report)
+        .map_err(ExecutionError::Stage)?;
+    crate::inventory::verify_result(&confirmed.plan, &report).map_err(ExecutionError::Inventory)?;
     let package_manager_restart = false;
     let next = if reboot_required {
         OperationState::AwaitingReboot
@@ -605,8 +673,10 @@ fn revalidate_staged_solver(
     confirmed: &PlannedUpdate,
     expected_hash: &str,
 ) -> Result<(), ExecutionError> {
-    let facts = lyra_upgrade_core::discover_host(&PreparedDiscovery { context })
+    let mut facts = lyra_upgrade_core::discover_host(&PreparedDiscovery { context })
         .map_err(|error| revalidation_error(PlannerError::Discovery(error)))?;
+    facts.installed_packages = crate::vendor_metadata::installed_packages(None)
+        .map_err(|error| revalidation_error(PlannerError::VendorMetadata(error)))?;
     let aliases = manifest
         .repositories
         .iter()

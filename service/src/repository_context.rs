@@ -10,6 +10,7 @@ pub struct RepositoryContext {
     pub raw: PathBuf,
     pub solv: PathBuf,
     pub packages: PathBuf,
+    pub simulation_root: Option<PathBuf>,
 }
 
 impl RepositoryContext {
@@ -21,6 +22,7 @@ impl RepositoryContext {
             solv: cache.join("solv"),
             packages: cache.join("packages"),
             cache,
+            simulation_root: None,
         }
     }
     pub fn arguments(&self) -> Vec<OsString> {
@@ -36,14 +38,35 @@ impl RepositoryContext {
         .collect()
     }
     pub fn command(&self) -> Command {
-        let mut command = Command::new("zypper");
+        let mut command = if self.simulation_root.is_some() && unsafe { libc::geteuid() } != 0 {
+            let mut command = Command::new("/usr/bin/unshare");
+            command.args(["--user", "--map-root-user", "--", "/usr/bin/zypper"]);
+            command
+        } else {
+            Command::new("/usr/bin/zypper")
+        };
+        if let Some(root) = &self.simulation_root {
+            command.arg("--root").arg(root);
+        }
         command
             .args(self.arguments())
             .env_clear()
             .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
             .env("LC_ALL", "C")
             .stdin(Stdio::null());
+        if let Some(root) = &self.simulation_root {
+            command.env("ZYPP_LOGFILE", self.cache.join("zypper.log"));
+            // GPG's AF_UNIX socket has a 108-byte pathname limit. A nested
+            // cache path makes agent startup retry until timeout.
+            command
+                .env("TMPDIR", root.join("tmp"))
+                .env("ZYPPTMPDIR", root.join("tmp"));
+        }
         command
+    }
+
+    pub fn output(&self, arguments: &[&str]) -> std::io::Result<std::process::Output> {
+        crate::process::output(self.command().args(arguments), 120)
     }
 }
 
@@ -86,9 +109,7 @@ impl DiscoveryBackend for PreparedDiscovery<'_> {
         }
         let output = self
             .context
-            .command()
-            .args(arguments)
-            .output()
+            .output(arguments)
             .map_err(|_| DiscoverError::CommandFailed("zypper"))?;
         Ok(CommandOutput {
             success: output.status.success(),

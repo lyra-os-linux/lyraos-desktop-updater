@@ -27,6 +27,7 @@ enum CheckFailure {
     Timeout,
     Worker,
     Rollback,
+    Inventory,
 }
 
 impl CheckFailure {
@@ -43,6 +44,7 @@ impl CheckFailure {
             Self::Timeout => "POST_BOOT_VERIFICATION_TIMEOUT",
             Self::Worker => "POST_BOOT_WORKER_FAILED",
             Self::Rollback => "POST_BOOT_ROLLBACK_IDENTITY_FAILED",
+            Self::Inventory => "POST_BOOT_INVENTORY_FAILED",
         }
     }
 
@@ -64,6 +66,7 @@ impl CheckFailure {
             Some(16) => Some(Self::FailedUnits),
             Some(17) => Some(Self::Grub),
             Some(20) => Some(Self::Rollback),
+            Some(21) => Some(Self::Inventory),
             Some(124 | 137) => Some(Self::Timeout),
             _ => Some(Self::Worker),
         }
@@ -88,6 +91,13 @@ fn main() {
         eprintln!("lyra-upgrade-verify: invalid arguments");
         std::process::exit(2);
     }
+    let _transaction = match lyra_upgrade_service::executor::TransactionLock::acquire() {
+        Ok(lock) => lock,
+        Err(_) => {
+            eprintln!("lyra-upgrade-verify: TRANSACTION_BUSY");
+            std::process::exit(1);
+        }
+    };
     let scan = match pending::pending_operation(Path::new(STATE_ROOT), |entry, reason| {
         eprintln!(
             "lyra-upgrade-verify: POST_BOOT_STATE_ENTRY_INVALID entry=\"{entry}\" reason={reason}"
@@ -102,6 +112,18 @@ fn main() {
             std::process::exit(1);
         }
     };
+    let interrupted = !scan.interrupted.is_empty();
+    for mut state in scan.interrupted {
+        state.state = pending::interrupted_state(state.state)
+            .expect("interrupted state classified during scan");
+        state.sequence = state.sequence.saturating_add(1);
+        state.error_code = Some("OPERATION_INTERRUPTED".into());
+        persist(&state);
+        eprintln!(
+            "lyra-upgrade-verify: OPERATION_INTERRUPTED operation={}",
+            state.operation_id
+        );
+    }
     let incomplete_scan = scan.invalid_entries != 0;
     if incomplete_scan {
         eprintln!(
@@ -110,7 +132,7 @@ fn main() {
         );
     }
     let Some((operation_dir, mut state)) = scan.operation else {
-        if incomplete_scan {
+        if incomplete_scan || interrupted {
             std::process::exit(1);
         }
         return;
@@ -143,7 +165,7 @@ fn main() {
         eprintln!("lyra-upgrade-verify: {}", error.code());
     }
     persist(&state);
-    if state.state != OperationState::Completed || incomplete_scan {
+    if state.state != OperationState::Completed || incomplete_scan || interrupted {
         std::process::exit(1);
     }
 }
@@ -255,6 +277,33 @@ fn verify(state: &lyra_upgrade_core::OperationStateRecord) -> Result<(), CheckFa
     if !run("test", &["-s", "/boot/grub2/grub.cfg"]) {
         return Err(CheckFailure::Grub);
     }
+    let report = lyra_upgrade_service::inventory::capture().map_err(|_| CheckFailure::Inventory)?;
+    lyra_upgrade_service::inventory::save(
+        &Path::new(STATE_ROOT)
+            .join(&state.operation_id)
+            .join("inventory-after.json"),
+        &report,
+    )
+    .map_err(|_| CheckFailure::Inventory)?;
+    let operation_dir = Path::new(STATE_ROOT).join(&state.operation_id);
+    if state.recovery.is_some() {
+        let before =
+            lyra_upgrade_service::inventory::load(&operation_dir.join("inventory-before.json"))
+                .map_err(|_| CheckFailure::Inventory)?;
+        if before.installed_packages != report.installed_packages {
+            return Err(CheckFailure::Inventory);
+        }
+    } else {
+        let plan: lyra_upgrade_core::UpgradePlan = serde_json::from_slice(
+            &fs::read(operation_dir.join("plan.json")).map_err(|_| CheckFailure::Inventory)?,
+        )
+        .map_err(|_| CheckFailure::Inventory)?;
+        if plan.sha256().ok().as_deref() != Some(&state.plan_sha256) {
+            return Err(CheckFailure::Inventory);
+        }
+        lyra_upgrade_service::inventory::verify_result(&plan, &report)
+            .map_err(|_| CheckFailure::Inventory)?;
+    }
     Ok(())
 }
 
@@ -275,9 +324,7 @@ fn verify_release(
         // reinterpret them as successful upgrades after installing this reader.
         return Err(CheckFailure::Rollback);
     } else if let Some(target) = &state.target
-        && (actual.version != target.version
-            || actual.edition != target.edition
-            || actual.architecture != target.architecture)
+        && actual != target
     {
         return Err(CheckFailure::Identity);
     }
@@ -310,6 +357,13 @@ fn read_manifest_sequence(operation_dir: &Path) -> Option<u64> {
 fn write_sequence(path: &Path, sequence: u64) -> std::io::Result<()> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
+    match lyra_upgrade_service::manifest_fetch::read_last_manifest_sequence(path) {
+        Ok(Some(previous)) if previous > sequence => {
+            return Err(std::io::Error::other("replay sequence cannot decrease"));
+        }
+        Ok(_) => {}
+        Err(_) => return Err(std::io::Error::other("invalid replay sequence")),
+    }
     let temporary = path.with_extension("tmp");
     let mut file = fs::OpenOptions::new()
         .write(true)

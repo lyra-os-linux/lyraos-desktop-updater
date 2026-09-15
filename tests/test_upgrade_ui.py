@@ -26,7 +26,7 @@ class UpgradeUiContractTests(unittest.TestCase):
         app = (UPGRADE / "ui/app.js").read_text(encoding="utf-8")
         self.assertIn('var_os("LYRA_UPGRADE_LAYOUT_PREVIEW")', rust)
         self.assertIn('if (!await invoke("layout_preview_enabled")) return false', app)
-        self.assertIn("if(!enabled)resumeOperation()", app)
+        self.assertIn("if(!enabled){await resumeOperation()", app)
 
     def test_operation_resume_keeps_only_identifiers_in_web_storage(self) -> None:
         app = (UPGRADE / "ui/app.js").read_text(encoding="utf-8")

@@ -11,3 +11,4 @@ serde.workspace = true
 serde_json.workspace = true
 lyra-upgrade-core = { path = "../core" }
 lyra-upgrade-protocol = { path = "../protocol" }
+lyra-upgrade-service = { path = "../service" }

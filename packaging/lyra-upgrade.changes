@@ -1,4 +1,18 @@
 -------------------------------------------------------------------
+Tue Sep 15 12:00:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
+
+- Prepare 0.2.4: reconcile Desktop #13 implementation and recovery criteria.
+- Separate unprivileged inspection/planning from explicit administrative
+  confirmation; provide a read-only systemd broker with peer UID checks.
+- Preview signed release offers in Portuguese, English and Spanish with
+  verified display cache, package review and personal-backup acknowledgement.
+- Bind full installed inventory and exact release builds to reviewed plans;
+  fail closed on replay-state corruption, expiry and ambiguous signing keys.
+- Retain and authenticate signed bytes offline; audit package preservation,
+  configuration artifacts and boot recovery after interrupted operations.
+- Keep real GNOME successor, reboot/rollback and ISO promotion gates pending.
+
+-------------------------------------------------------------------
 Wed Sep  2 12:00:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
 
 - Read the canonical /usr/lib/os-release file when collecting VM evidence.

@@ -1,7 +1,8 @@
 # Máquina de estados do Lyra Upgrade
 
 Esta máquina é normativa para update e release-upgrade. Estados persistidos
-usam os nomes abaixo e toda transição gera evento com sequência monotônica.
+usam os nomes abaixo e transições de execução mantêm sequência monotônica. A reconciliação de boot
+persiste o estado/causa e registra o diagnóstico no journal.
 
 ```text
 Idle -> Checking -> Available -> Preflight -> Planned -> AwaitingConfirmation
@@ -28,11 +29,11 @@ Para update sem necessidade de reboot, `Applying` pode seguir diretamente para
 | `Checking` | cache autenticado | sim | `Available`, `Blocked` |
 | `Available` | não | sim | `Preflight` |
 | `Preflight` | não | sim | `Planned`, `Blocked` |
-| `Planned` | estado/planos | sim | `AwaitingConfirmation` |
+| `Planned` | somente memória do cliente | sim | `AwaitingConfirmation` |
 | `AwaitingConfirmation` | não | sim | `Downloading`, `Idle` |
 | `Downloading` | cache RPM | sim, antes de pacote ativo | `Snapshotting`, `Blocked` |
 | `Snapshotting` | snapshot/estado | não | `Applying`, `ReadyToReboot`, `Failed` |
-| `Applying` | pacotes/sistema | somente fronteiras seguras | `AwaitingReboot`, `Completed`, `NeedsRecovery` |
+| `Applying` | pacotes/sistema | não | `AwaitingReboot`, `Completed`, `NeedsRecovery` |
 | `ReadyToReboot` | estado/offline | não | `ApplyingOffline` |
 | `ApplyingOffline` | sistema/repositórios | não | `AwaitingReboot`, `NeedsRecovery` |
 | `AwaitingReboot` | não | não | `VerifyingBoot` |
@@ -67,7 +68,7 @@ Para update sem necessidade de reboot, `Applying` pode seguir diretamente para
 | UI encerra durante download | operação continua ou pausa seguramente | somente cache |
 | UI encerra durante aplicação | serviço continua; nova UI reconecta | conforme plano |
 | serviço cai antes do snapshot | reconciliar e voltar a estado seguro | nenhuma escrita destrutiva |
-| serviço cai após criar snapshot | validar snapshot persistido antes de continuar | somente etapa idempotente |
+| serviço cai após criar snapshot | `NeedsRecovery` no próximo boot; não repetir instalação | diagnóstico/recuperação explícita |
 | energia cai durante aplicação | `NeedsRecovery` se conclusão não for comprovável | nenhuma repetição cega |
 | `zypper` retorna 4 | `Failed`, preservar causa/snapshot | nenhuma |
 | `zypper` retorna 102 | `AwaitingReboot` | persistir reboot requerido |
@@ -91,3 +92,5 @@ e o clone esperado; sucesso termina em `Completed`/`rollback-verified`, sem
 consumir a sequência do manifesto do upgrade que falhou. Uma intenção
 incompleta permanece em recuperação para diagnóstico, sem repetição cega.
 Ver [contrato e qualificação de rollback](rollback-qualification.md).
+
+Consultar a [matriz de aceite atual](desktop-13-acceptance.md) para separar os testes de código dos ensaios de boot ainda pendentes.
