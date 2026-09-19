@@ -10,18 +10,27 @@ Sat Sep 19 2026 - Rodrigo Brito <183213+britors@users.noreply.github.com>
 - Add regression tests and a disposable PackageKit/zypp offline reboot cycle.
 
 -------------------------------------------------------------------
-Tue Sep 15 12:00:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
+Tue Sep 15 2026 - Rodrigo Brito <183213+britors@users.noreply.github.com>
 
-- Prepare 0.2.4: reconcile Desktop #13 implementation and recovery criteria.
-- Separate unprivileged inspection/planning from explicit administrative
-  confirmation; provide a read-only systemd broker with peer UID checks.
-- Preview signed release offers in Portuguese, English and Spanish with
-  verified display cache, package review and personal-backup acknowledgement.
-- Bind full installed inventory and exact release builds to reviewed plans;
-  fail closed on replay-state corruption, expiry and ambiguous signing keys.
-- Retain and authenticate signed bytes offline; audit package preservation,
-  configuration artifacts and boot recovery after interrupted operations.
-- Keep real GNOME successor, reboot/rollback and ISO promotion gates pending.
+- Refresh 0.2.4 from integrated Git 74ca967f6766380a2d7e7652b9ad134942e43410.
+- Ship signed release discovery, review, backup and recovery flow.
+- Expose read-only queries without authentication; authorize administrative actions.
+- Use protocol and plan v3 with complete inventory and post-boot checks.
+
+-------------------------------------------------------------------
+Fri Sep 11 2026 - Rodrigo Brito <rodrigo@lyraos.com.br>
+
+- Refresh 0.2.3 from integrated Git 662dbe2c1173149db35e6ecab7d6430dccc96517.
+- Ship integrated planner, vendor policy, rollback and recovery fixes.
+- Preserve corrupt state and bound event retention without corrupting JSONL.
+- Use isolated offline caches and read-only post-boot verification.
+- Include recovery-format metadata and required runtime tools.
+
+-------------------------------------------------------------------
+Wed Sep  2 20:13:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
+
+- Rebuild the unchanged Lyra 1.1 manifest and VM evidence fixes through the
+  reviewed staging channel to restore release promotion provenance.
 
 -------------------------------------------------------------------
 Wed Sep  2 12:00:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
