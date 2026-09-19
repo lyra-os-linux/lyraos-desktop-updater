@@ -1,4 +1,15 @@
 -------------------------------------------------------------------
+Sat Sep 19 2026 - Rodrigo Brito <183213+britors@users.noreply.github.com>
+
+- Prepare 0.2.5: recognize ownership of offline update markers before
+  taking the Lyra transaction lock or loading operation state.
+- Exit successfully for absent and foreign markers, including PackageKit
+  requests when the Lyra operations directory does not exist.
+- Preserve rejection of broken Lyra requests and recheck ownership before
+  application, recovery and marker removal.
+- Add regression tests and a disposable PackageKit/zypp offline reboot cycle.
+
+-------------------------------------------------------------------
 Tue Sep 15 12:00:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
 
 - Prepare 0.2.4: reconcile Desktop #13 implementation and recovery criteria.
