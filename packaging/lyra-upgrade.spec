@@ -6,7 +6,7 @@
 #
 
 Name:           lyra-upgrade
-Version:        0.2.4
+Version:        0.2.5
 Release:        0
 Summary:        Atualização recuperável do Lyra OS Desktop
 License:        GPL-3.0-only
@@ -113,6 +113,9 @@ ln -s %{_unitdir}/lyra-upgrade-probe.service \
 %check
 cargo test --offline --workspace
 desktop-file-validate %{buildroot}%{_datadir}/applications/org.lyraos.LyraUpgrade.desktop
+
+%pre
+%systemd_pre lyra-upgrade-query.socket lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service
 
 %post
 %systemd_post lyra-upgrade-query.socket lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service
