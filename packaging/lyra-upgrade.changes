@@ -1,6 +1,7 @@
 -------------------------------------------------------------------
 Sat Sep 19 2026 - Rodrigo Brito <183213+britors@users.noreply.github.com>
 
+- Register systemd units before installation with the SUSE service macro.
 - Prepare 0.2.5: recognize ownership of offline update markers before
   taking the Lyra transaction lock or loading operation state.
 - Exit successfully for absent and foreign markers, including PackageKit
