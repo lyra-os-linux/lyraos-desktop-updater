@@ -68,10 +68,31 @@ do produto permanece intacta. Discos e initramfs são removidos ao terminar.
 A coleta acrescenta apenas um ExecStopPost e redirecionamento de log à unit
 Lyra; as ações PackageKit/zypp e os reboots são reais.
 
+## Publicação de 20/09/2026
+
+Publicado `lyra-upgrade-0.2.5-lp161.1.1.x86_64.rpm` pelo
+[pedido OBS1379300](https://build.opensuse.org/request/show/1379300).
+Fontes `8cb542fc5f24916da441e4027c0218d48cbc276e`, staging rev38 e release rev12,
+ambos com srcmd5 `7858b2697376f5c70a42e5796ee2e343`.
+
+O worker extraído do RPM assinado de staging passou pelo mesmo ciclo nativo
+PackageKit com dois reboots e cenários negativos; o worker de release é
+idêntico por SHA256. Os 127 testes Rust passaram nos dois builds. A assinatura,
+proveniência, units, chave pública e registro systemd pré-instalação foram
+verificados. O download público é idêntico ao RPM da API, SHA256
+`750ef116be969dc41521404049fef5fec443ae6458e8412e8883470dde3d5b55`.
+Ver [evidência OBS](packagekit-obs-evidence.json).
+
+A revisão inicial37 foi substituída para corrigir a ausência de `%systemd_pre`.
+Restam apontamentos rpmlint já presentes na0.2.4: ação própria não listada no
+perfil Polkit upstream e seis binários com símbolos. A política de autorização
+não foi alterada e nenhum apontamento foi ocultado por filtro novo.
+
 ## Integração pendente
 
-Este ensaio não equivale à qualificação do RPM corrigido, migração completa
-para um sucessor Lyra assinado, desktop GNOME ou ISO final. Publicar e qualificar
-o RPM 0.2.5, exigir essa versão na candidata e repetir o ciclo sobre o checksum
-exato da ISO antes de encerrar #22. Reversão antes de promoção: reverter o commit
-e reconstruir o pacote; não houve instalação na estação durante esta correção.
+O [Desktop PR94](https://github.com/lyra-os-linux/lyraos-desktop/pull/94)
+exige Updater>=0.2.5 e registra UPD-01. Este ensaio de componentes não equivale
+à migração completa para um sucessor Lyra assinado, desktop GNOME ou ISO final.
+Integrar os PRs e repetir o ciclo sobre o checksum exato da candidata antes de
+encerrar #22. Não houve instalação na estação. Em regressão, reverter fontes,
+reconstruir pelo staging e repetir os gates; manter a candidata bloqueada.
