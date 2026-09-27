@@ -1,6 +1,6 @@
 use std::fs;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Output, Stdio};
 
 use lyra_upgrade_core::{
@@ -12,9 +12,19 @@ use lyra_upgrade_service::solver_xml::parse_solver_xml;
 use lyra_upgrade_service::vendor_metadata::enrich_solver_vendors;
 use sha2::{Digest, Sha256};
 
+mod request;
+
 const STATE_ROOT: &str = "/var/lib/lyra-upgrade/operations";
 
 fn main() {
+    let operation_dir = match request::resolve(Path::new("/system-update"), Path::new(STATE_ROOT)) {
+        Ok(Some(path)) => path,
+        Ok(None) => return,
+        Err(error) => {
+            eprintln!("lyra-upgrade-offline: {error}");
+            std::process::exit(1);
+        }
+    };
     let _transaction = match lyra_upgrade_service::executor::TransactionLock::acquire() {
         Ok(lock) => lock,
         Err(_) => {
@@ -22,15 +32,21 @@ fn main() {
             std::process::exit(1);
         }
     };
-    if let Err(error) = run() {
+    if let Err(error) = run(&operation_dir) {
         eprintln!("lyra-upgrade-offline: {error}");
-        mark_recovery();
+        mark_recovery(&operation_dir);
         std::process::exit(1);
     }
 }
 
-fn run() -> Result<(), String> {
-    let operation_dir = resolve_operation_dir()?;
+fn run(operation_dir: &Path) -> Result<(), String> {
+    // Recheck after acquiring our lock: a removed/replaced request cannot
+    // authorize applying the operation selected before the lock.
+    request::require_current(
+        Path::new("/system-update"),
+        Path::new(STATE_ROOT),
+        operation_dir,
+    )?;
     let operation_id = operation_dir
         .file_name()
         .and_then(|name| name.to_str())
@@ -70,14 +86,14 @@ fn run() -> Result<(), String> {
 
     save_state(Path::new(STATE_ROOT), &state).map_err(|_| "cannot persist offline state")?;
     revalidate_plan(
-        &operation_dir,
+        operation_dir,
         &manifest,
         &confirmed_plan,
         &state.plan_sha256,
     )?;
 
     let output = release_command(
-        &operation_dir,
+        operation_dir,
         &[
             "dist-upgrade",
             "--details",
@@ -110,7 +126,11 @@ fn run() -> Result<(), String> {
         .map_err(|_| "invalid post-apply transition")?;
     state.last_completed_step = Some("offline-apply".into());
     save_state(Path::new(STATE_ROOT), &state).map_err(|_| "cannot persist result")?;
-    remove_system_update_marker()?;
+    request::remove_current(
+        Path::new("/system-update"),
+        Path::new(STATE_ROOT),
+        operation_dir,
+    )?;
     Ok(())
 }
 
@@ -216,21 +236,6 @@ fn install_repository_set(manifest: &ReleaseManifest, operation_id: &str) -> Res
     Ok(())
 }
 
-fn resolve_operation_dir() -> Result<PathBuf, String> {
-    let marker = Path::new("/system-update");
-    let metadata = fs::symlink_metadata(marker).map_err(|error| error.to_string())?;
-    if !metadata.file_type().is_symlink() {
-        return Err("/system-update is not a symbolic link".into());
-    }
-    let target = fs::read_link(marker).map_err(|error| error.to_string())?;
-    let root = fs::canonicalize(STATE_ROOT).map_err(|error| error.to_string())?;
-    let target = fs::canonicalize(target).map_err(|error| error.to_string())?;
-    if target.parent() != Some(root.as_path()) {
-        return Err("/system-update target is outside the state root".into());
-    }
-    Ok(target)
-}
-
 fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, String> {
     if fs::symlink_metadata(path)
         .map_err(|error| error.to_string())?
@@ -277,23 +282,16 @@ fn synthetic_output(message: String) -> Output {
     }
 }
 
-fn remove_system_update_marker() -> Result<(), String> {
-    let marker = Path::new("/system-update");
-    if fs::symlink_metadata(marker)
-        .map_err(|error| error.to_string())?
-        .file_type()
-        .is_symlink()
+fn mark_recovery(operation_dir: &Path) {
+    if request::require_current(
+        Path::new("/system-update"),
+        Path::new(STATE_ROOT),
+        operation_dir,
+    )
+    .is_err()
     {
-        fs::remove_file(marker).map_err(|error| error.to_string())
-    } else {
-        Err("refusing to remove non-symlink /system-update".into())
-    }
-}
-
-fn mark_recovery() {
-    let Ok(operation_dir) = resolve_operation_dir() else {
         return;
-    };
+    }
     let Some(operation_id) = operation_dir.file_name().and_then(|name| name.to_str()) else {
         return;
     };
@@ -303,7 +301,11 @@ fn mark_recovery() {
         state.sequence = state.sequence.saturating_add(1);
         let _ = save_state(Path::new(STATE_ROOT), &state);
     }
-    let _ = remove_system_update_marker();
+    let _ = request::remove_current(
+        Path::new("/system-update"),
+        Path::new(STATE_ROOT),
+        operation_dir,
+    );
 }
 
 #[cfg(test)]
@@ -316,7 +318,7 @@ mod tests {
     use std::os::unix::fs::symlink;
     use std::path::PathBuf;
 
-    fn temporary(name: &str) -> PathBuf {
+    pub(super) fn temporary(name: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!(
             "lyra-upgrade-offline-{name}-{}",
             std::process::id()

@@ -1,0 +1,81 @@
+{
+  "schema": 1,
+  "date": "2026-09-20",
+  "source_commit": "8cb542fc5f24916da441e4027c0218d48cbc276e",
+  "request": 1379300,
+  "request_state": "accepted",
+  "srcmd5": "7858b2697376f5c70a42e5796ee2e343",
+  "staging_revision": 38,
+  "release_revision": 12,
+  "staging": {
+    "passed": true,
+    "project": "home:rodrigosbrito:lyra:staging",
+    "srcmd5": "7858b2697376f5c70a42e5796ee2e343",
+    "file": "lyra-upgrade-0.2.5-lp161.2.1.x86_64.rpm",
+    "identity": [
+      "lyra-upgrade",
+      "0.2.5",
+      "lp161.2.1",
+      "obs://build.opensuse.org/home:rodrigosbrito:lyra:staging/openSUSE_Leap_16.1/7858b2697376f5c70a42e5796ee2e343-lyra-upgrade"
+    ],
+    "signature": "/home/rodrigo/Git/LyraOS/analysis/2026-09-19/updater-packagekit/staging-rpms/lyra-upgrade-0.2.5-lp161.2.1.x86_64.rpm:\n    Header V3 RSA/SHA256 Signature, key ID 7edca82e: OK\n    Header SHA256 digest: OK\n    Header SHA1 digest: OK\n    Payload SHA256 digest: OK\n    V3 RSA/SHA256 Signature, key ID 7edca82e: OK\n    MD5 digest: OK\n",
+    "sha256": "04c783891b533505414a652ac6b88213a1133332cfc5ea63dcc96adff040338a",
+    "provenance": "commit=8cb542fc5f24916da441e4027c0218d48cbc276e\nsource_epoch=1789918929\ncargo_lock_sha256=73997a5cafb8c586b92566e2859929e2b8ff1cdb4a83b55db0113abf29b0e183\n",
+    "offline_worker_sha256": "4f3e8fd9e8d902c37c3b20cd904432d5bab524f71cae404fafdffffccbab6a25",
+    "units_match_git": true,
+    "release_key_unchanged": true,
+    "vm": {
+      "passed": true,
+      "reboots": 2,
+      "logs": {
+        "prepare.log": "32a1a54e35e91f6abc65aee091011bef9be63a2295ea885498a3cbd6eda6d8b2",
+        "offline.log": "4f26bb2586354778875c0b9fafc50d491a3c5f369f29a22b7092397c65cf3263",
+        "verify.log": "6c8ac02314875ccb001e26e372eeb1ab04f611622bdde31cd71772d519736789"
+      }
+    },
+    "rust_tests": 127,
+    "remaining_rpmlint": {
+      "errors": [
+        "polkit-untracked-privilege: unchanged action already in 0.2.4"
+      ],
+      "warnings": [
+        "6 unstripped binaries: already present in 0.2.4"
+      ],
+      "systemd_registration_errors_resolved": true
+    }
+  },
+  "release_public_verification": {
+    "passed": true,
+    "url": "https://download.opensuse.org/repositories/home:/rodrigosbrito:/lyra/openSUSE_Leap_16.1/x86_64/lyra-upgrade-0.2.5-lp161.1.1.x86_64.rpm",
+    "file": "lyra-upgrade-0.2.5-lp161.1.1.x86_64.rpm",
+    "sha256": "750ef116be969dc41521404049fef5fec443ae6458e8412e8883470dde3d5b55",
+    "signature": "/home/rodrigo/Git/LyraOS/analysis/2026-09-19/updater-packagekit/public-rpms/lyra-upgrade-0.2.5-lp161.1.1.x86_64.rpm:\n    Header V3 RSA/SHA256 Signature, key ID 7edca82e: OK\n    Header SHA256 digest: OK\n    Header SHA1 digest: OK\n    Payload SHA256 digest: OK\n    V3 RSA/SHA256 Signature, key ID 7edca82e: OK\n    MD5 digest: OK\n",
+    "srcmd5": "7858b2697376f5c70a42e5796ee2e343",
+    "matches_verified_release_rpm": true
+  },
+  "limits": [
+    "Worker extracted from signed staging RPM executed in a minimal disposable native PackageKit/zypp VM, not a full GNOME installation",
+    "No full signed Lyra successor migration or exact ISO qualification",
+    "Host package not installed"
+  ],
+  "release": {
+    "passed": true,
+    "project": "home:rodrigosbrito:lyra",
+    "srcmd5": "7858b2697376f5c70a42e5796ee2e343",
+    "file": "lyra-upgrade-0.2.5-lp161.1.1.x86_64.rpm",
+    "identity": [
+      "lyra-upgrade",
+      "0.2.5",
+      "lp161.1.1",
+      "obs://build.opensuse.org/home:rodrigosbrito:lyra/openSUSE_Leap_16.1/7858b2697376f5c70a42e5796ee2e343-lyra-upgrade"
+    ],
+    "signature": "/home/rodrigo/Git/LyraOS/analysis/2026-09-19/updater-packagekit/release-rpms/lyra-upgrade-0.2.5-lp161.1.1.x86_64.rpm:\n    Header V3 RSA/SHA256 Signature, key ID 7edca82e: OK\n    Header SHA256 digest: OK\n    Header SHA1 digest: OK\n    Payload SHA256 digest: OK\n    V3 RSA/SHA256 Signature, key ID 7edca82e: OK\n    MD5 digest: OK\n",
+    "sha256": "750ef116be969dc41521404049fef5fec443ae6458e8412e8883470dde3d5b55",
+    "provenance": "commit=8cb542fc5f24916da441e4027c0218d48cbc276e\nsource_epoch=1789918929\ncargo_lock_sha256=73997a5cafb8c586b92566e2859929e2b8ff1cdb4a83b55db0113abf29b0e183\n",
+    "offline_worker_sha256": "4f3e8fd9e8d902c37c3b20cd904432d5bab524f71cae404fafdffffccbab6a25",
+    "units_match_git": true,
+    "release_key_unchanged": true
+  },
+  "release_rust_tests": 127,
+  "release_worker_identical_to_qualified_staging": true
+}

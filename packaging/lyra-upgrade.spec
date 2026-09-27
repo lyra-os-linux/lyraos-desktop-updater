@@ -114,6 +114,9 @@ ln -s %{_unitdir}/lyra-upgrade-probe.service \
 cargo test --offline --workspace
 desktop-file-validate %{buildroot}%{_datadir}/applications/org.lyraos.LyraUpgrade.desktop
 
+%pre
+%systemd_pre lyra-upgrade-query.socket lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service
+
 %post
 %systemd_post lyra-upgrade-query.socket lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service
 if [ -d /run/systemd/system ]; then

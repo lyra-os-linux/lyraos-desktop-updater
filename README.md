@@ -56,6 +56,10 @@ protocolo/plano v3. Abrir, consultar, planejar e acompanhar não solicitam senha
 Autenticação ocorre somente nas ações administrativas explícitas. A promoção
 aguarda os ensaios GNOME de sucessor/boot/rollback nas issues Desktop #24/#26.
 
+A [qualificação de coexistência com PackageKit](docs/packagekit-offline-qualification.md)
+reproduz a falha anterior e valida a saída sem efeitos para pedidos de outra
+ferramenta durante um ciclo offline com reinicializações reais.
+
 A versão 0.2.6 acrescenta autorização de troca de fornecedor por nomes exatos
 no manifesto assinado. A regra pode liberar somente o portal e suas traduções,
 sem permitir a mesma troca para outros RPMs. Manifestos anteriores continuam

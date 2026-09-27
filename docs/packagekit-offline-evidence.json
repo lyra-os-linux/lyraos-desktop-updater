@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "date": "2026-09-19",
+  "issue": "https://github.com/lyra-os-linux/lyraos-desktop-updater/issues/22",
+  "version": "0.2.5",
+  "baseline_package": "lyra-upgrade-0.2.4-lp161.1.1",
+  "baseline_error": "No such file or directory (os error 2)",
+  "baseline_offline_exit": 1,
+  "fixed_offline_exit": 0,
+  "packagekit": "1.2.8-160100.2.1",
+  "kernel": "6.12.0-160100.4-default",
+  "packagekit_success_both": true,
+  "fixture_update": "lyra-offline-fixture 1 -> 2",
+  "reboots_per_scenario": 2,
+  "rust_tests": 127,
+  "python_tests": 30,
+  "checks": [
+    {
+      "case": "baseline",
+      "phase": "prepare",
+      "sha256": "408ba141b86c288e99c4b0beb1c9e17b82e58e6e831394820bd120c38a110089"
+    },
+    {
+      "case": "baseline",
+      "phase": "offline",
+      "sha256": "ce2c1c99febbf02a6f8adaf6f2874f656e2ac2e4c07809667974559e181c4058"
+    },
+    {
+      "case": "baseline",
+      "phase": "verify",
+      "sha256": "64266e49b02df218d88fdfdb3dc3b3c0f6d28c61ac129bf15f148d27ca8d1d13"
+    },
+    {
+      "case": "fixed-final",
+      "phase": "prepare",
+      "sha256": "d41d97d99d3987420a8b84d1227b46ac3303ff2bb119c53b336e453b2f654f39"
+    },
+    {
+      "case": "fixed-final",
+      "phase": "offline",
+      "sha256": "5d1a37b8cda4033d7b715a734aae59df01ad75e9c140ada21886ec56aede66fe"
+    },
+    {
+      "case": "fixed-final",
+      "phase": "verify",
+      "sha256": "52ab420c0b8479a60fba5938c7f866dfbcafd8f3b5b1d689c9fb8669632f1a41"
+    }
+  ],
+  "limits": [
+    "Public native executables/libraries in a disposable minimal VM; not a full GNOME ISO",
+    "An inert local unsigned fixture RPM with gpgcheck disabled only inside the isolated VM; product signature policy unchanged",
+    "No new signed Lyra release migration was performed",
+    "Corrected RPM/OBS and exact ISO qualification pending"
+  ]
+}
