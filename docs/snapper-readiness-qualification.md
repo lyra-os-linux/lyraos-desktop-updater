@@ -32,7 +32,12 @@ brokers antigos recusam a consulta e não liberam o planejamento.
   por compilação local da correção sobre 0.2.7. O binário original foi preservado;
   isso não qualifica um RPM 0.2.8 do OBS.
 
-O planejamento assinado completo, a autenticação Polkit, a execução offline,
+O planejamento assinado completo também passou com o serviço candidato, em
+conta comum: oferta oficial por HTTPS, operação PackageMigration, somente o
+portal principal e inventário/repositórios intactos. Os [resultados resumidos](snapper-readiness-evidence.json)
+registram hashes, o plano exato e os limites.
+
+A autenticação Polkit, a execução offline,
 o boot/rollback e a publicação do RPM 0.2.8 permanecem gates distintos.
 O canal release continua em 0.2.5. A correção não altera o manifesto assinado
 nem conclui a entrega do portal ou a qualificação da ISO.
