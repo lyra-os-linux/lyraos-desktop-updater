@@ -155,6 +155,38 @@ pacotes continuam vinculados ao hash confirmado. O espaço restante é
 reavaliado em cada fase, mas a redução dos bytes a baixar após preencher o
 cache não altera a identidade da transação aprovada.
 
+A partir da versão 0.2.6, cada entrada de `allowed_vendor_transitions` pode
+incluir `packages`, uma lista não vazia de nomes exatos, sem padrões nem
+repetições. Exemplo de formato (não é um manifesto publicado):
+
+```json
+{
+  "from": "SUSE LLC <https://www.suse.com/>",
+  "to": "obs://build.opensuse.org/home:rodrigosbrito",
+  "packages": ["xdg-desktop-portal-gnome", "xdg-desktop-portal-gnome-lang"]
+}
+```
+
+A autorização exige o par direcional **e** o nome do pacote. Ausência de
+`packages` preserva a regra ampla dos manifestos anteriores e sua serialização;
+`null`, lista vazia, nomes inválidos ou repetidos bloqueiam. Não é permitido
+misturar regra ampla e restrita para o mesmo par, pois a ampla anularia a
+restrição. Várias regras restritas para o mesmo par somam os nomes autorizados.
+Pacotes sem troca de fornecedor continuam sem precisar de exceção.
+
+Manifestos com `packages` devem declarar `minimum_updater_version >= 0.2.6`;
+a ferramenta de assinatura e a validação Rust exigem esse piso. Leitores antigos
+recusam o campo desconhecido, sem convertê-lo em autorização ampla. O campo faz
+parte dos bytes assinados e do hash do manifesto confirmado: remover, acrescentar
+ou trocar os nomes exige nova assinatura e novo plano. Downgrades, remoções,
+lockstep, identidade RPM e os demais gates conservam suas próprias regras.
+
+Essa capacidade não publica uma transição SUSE→OBS nem seleciona um RPM. A
+entrega do portal (#125 do Desktop) ainda exige RPM 0.2.6 do atualizador
+qualificado, manifesto assinado/revisado, resolução exata, ensaio offline e
+recuperação. O rollback do ensaio de pacote não autoriza downgrade pelo fluxo
+normal de atualização de versão.
+
 Na atualização de versão, solver e inventário usam o contexto de destino:
 `repos.d`, `cache`, `cache/raw`, `cache/solv` e `cache/packages` da operação.
 Isso inclui `packages --orphaned`, que precisa dos metadados mesmo com

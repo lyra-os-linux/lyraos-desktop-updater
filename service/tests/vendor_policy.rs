@@ -145,6 +145,7 @@ fn only_the_exact_directed_vendor_pair_is_permitted() {
             allowed_vendor_transitions: vec![VendorTransition {
                 from: from.into(),
                 to: to.into(),
+                packages: None,
             }],
             ..SolverPolicy::default()
         };
@@ -553,4 +554,210 @@ fn large_upgrade_preserves_all_vendor_changes_without_duplicate_plan_entries() {
         vendor_policy_blockers(&parsed.changes, &SolverPolicy::default()).len(),
         1801
     );
+}
+
+fn scoped_manifest() -> ReleaseManifest {
+    let mut manifest = manifest();
+    manifest.minimum_updater_version = "0.2.6".into();
+    manifest.allowed_vendor_transitions[0].packages = Some(vec!["lyra-vendor-fixture".into()]);
+    manifest
+}
+
+#[test]
+fn package_scope_uses_exact_names_and_directed_vendors() {
+    for case in ["vendor-only", "upgrade-vendor"] {
+        let result = enriched(case);
+        let manifest = scoped_manifest();
+        let policy = manifest.solver_policy();
+        assert!(vendor_policy_blockers(&result.changes, &policy).is_empty());
+        for name in [
+            "other-package",
+            "lyra-vendor-fixture-lang",
+            "Lyra-vendor-fixture",
+        ] {
+            let mut other = result.changes[0].clone();
+            other.name = name.into();
+            // A permitted portal does not grant the same vendor pair to another RPM.
+            let changes = [result.changes[0].clone(), other];
+            let denied = vendor_policy_blockers(&changes, &policy);
+            assert_eq!(
+                denied,
+                vec![
+                    lyra_upgrade_core::PreflightIssue::UnauthorizedVendorChange {
+                        package: name.into()
+                    }
+                ]
+            );
+        }
+        let mut reverse = result.changes[0].clone();
+        std::mem::swap(&mut reverse.current_vendor, &mut reverse.proposed_vendor);
+        assert!(!vendor_policy_blockers(&[reverse], &policy).is_empty());
+    }
+}
+
+#[test]
+fn scoped_rule_survives_plan_staging_and_offline_checks() {
+    let result = enriched("upgrade-vendor");
+    let manifest = scoped_manifest();
+    let confirmed = plan(&result, &manifest);
+    let hash = confirmed.sha256().unwrap();
+    check_confirmed_release_plan(&manifest, &confirmed, &hash).unwrap();
+    revalidate_release_plan(&facts(), &result, &manifest, &confirmed, &hash).unwrap();
+    let mut extra = result.clone();
+    let mut unrelated = result.changes[0].clone();
+    unrelated.name = "unrelated-rpm".into();
+    extra.changes.push(unrelated);
+    assert!(matches!(
+        revalidate_release_plan(&facts(), &extra, &manifest, &confirmed, &hash),
+        Err(PlannerError::Blocked(_))
+    ));
+    for scope in [
+        None,
+        Some(vec!["other".into()]),
+        Some(vec!["lyra-vendor-fixture".into(), "other".into()]),
+    ] {
+        let mut modified = manifest.clone();
+        modified.allowed_vendor_transitions[0].packages = scope;
+        // Both broadening and narrowing invalidate the already confirmed manifest hash.
+        assert!(matches!(
+            check_confirmed_release_plan(&modified, &confirmed, &hash),
+            Err(PlannerError::PlanChanged)
+        ));
+    }
+}
+
+#[test]
+fn absent_scope_round_trips_without_changing_legacy_manifest_shape() {
+    let legacy = manifest();
+    let bytes = serde_json::to_vec(&legacy).unwrap();
+    assert!(legacy.allowed_vendor_transitions[0].packages.is_none());
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert!(
+        value["allowed_vendor_transitions"][0]
+            .get("packages")
+            .is_none()
+    );
+    let decoded: ReleaseManifest = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(serde_json::to_vec(&decoded).unwrap(), bytes);
+    let mut result = enriched("vendor-only");
+    result.changes[0].name = "another-package".into();
+    assert!(vendor_policy_blockers(&result.changes, &decoded.solver_policy()).is_empty());
+}
+
+#[test]
+fn malformed_or_ambiguous_scope_never_becomes_a_pair_wide_grant() {
+    let value = serde_json::to_value(scoped_manifest()).unwrap();
+    for invalid in [
+        serde_json::Value::Null,
+        serde_json::json!("*"),
+        serde_json::json!([1]),
+        serde_json::json!({}),
+    ] {
+        let mut input = value.clone();
+        input["allowed_vendor_transitions"][0]["packages"] = invalid;
+        assert!(serde_json::from_value::<ReleaseManifest>(input).is_err());
+    }
+    for packages in [
+        vec![],
+        vec!["*"],
+        vec!["a", "a"],
+        vec!["valid", "../bad"],
+        vec![""],
+        vec!["foo bar"],
+    ] {
+        let mut manifest = scoped_manifest();
+        manifest.allowed_vendor_transitions[0].packages =
+            Some(packages.into_iter().map(str::to_string).collect());
+        assert_eq!(
+            lyra_upgrade_core::validate_manifest_route(
+                &manifest,
+                &facts().release,
+                None,
+                "0.2.6",
+                lyra_upgrade_core::ManifestChannelPolicy::Testing
+            ),
+            Err(lyra_upgrade_core::ManifestError::InvalidPolicy)
+        );
+        assert!(
+            !vendor_policy_blockers(&enriched("vendor-only").changes, &manifest.solver_policy())
+                .is_empty()
+        );
+    }
+    let legacy_rule = manifest().allowed_vendor_transitions.remove(0);
+    for broad_first in [false, true] {
+        let mut manifest = scoped_manifest();
+        manifest
+            .allowed_vendor_transitions
+            .push(legacy_rule.clone());
+        if broad_first {
+            manifest.allowed_vendor_transitions.reverse();
+        }
+        assert_eq!(
+            lyra_upgrade_core::validate_manifest_route(
+                &manifest,
+                &facts().release,
+                None,
+                "0.2.6",
+                lyra_upgrade_core::ManifestChannelPolicy::Testing
+            ),
+            Err(lyra_upgrade_core::ManifestError::InvalidPolicy)
+        );
+        assert!(
+            !vendor_policy_blockers(&enriched("vendor-only").changes, &manifest.solver_policy())
+                .is_empty()
+        );
+    }
+}
+
+#[test]
+fn scoped_manifest_requires_a_capable_updater_floor() {
+    let mut scoped = scoped_manifest();
+    let validate = |manifest: &ReleaseManifest, version: &str| {
+        lyra_upgrade_core::validate_manifest_route(
+            manifest,
+            &facts().release,
+            None,
+            version,
+            lyra_upgrade_core::ManifestChannelPolicy::Testing,
+        )
+    };
+    assert_eq!(validate(&scoped, "0.2.6"), Ok(()));
+    assert_eq!(
+        validate(&scoped, "0.2.5"),
+        Err(lyra_upgrade_core::ManifestError::UpdaterTooOld)
+    );
+    scoped.minimum_updater_version = "0.2.5".into();
+    assert_eq!(
+        validate(&scoped, "0.2.6"),
+        Err(lyra_upgrade_core::ManifestError::InvalidMinimumUpdaterVersion)
+    );
+}
+
+#[test]
+fn scoped_vendor_grant_does_not_authorize_downgrade_or_removal() {
+    let manifest = scoped_manifest();
+    for action in [PackageAction::Downgrade, PackageAction::Remove] {
+        let mut result = enriched("upgrade-vendor");
+        result.changes[0].action = action;
+        let report = evaluate_solver_preflight(
+            &facts(),
+            PreflightPolicy::default(),
+            &result,
+            &manifest.solver_policy(),
+        );
+        let issue = match action {
+            PackageAction::Downgrade => lyra_upgrade_core::PreflightIssue::UnauthorizedDowngrade {
+                package: "lyra-vendor-fixture".into(),
+            },
+            _ => lyra_upgrade_core::PreflightIssue::UnauthorizedRemoval {
+                package: "lyra-vendor-fixture".into(),
+            },
+        };
+        assert!(report.blockers.contains(&issue));
+    }
+    // An ordinary same-vendor update still needs no exception.
+    let mut ordinary = enriched("upgrade-vendor");
+    ordinary.changes[0].name = "unrelated-rpm".into();
+    ordinary.changes[0].proposed_vendor = ordinary.changes[0].current_vendor.clone();
+    assert!(vendor_policy_blockers(&ordinary.changes, &manifest.solver_policy()).is_empty());
 }

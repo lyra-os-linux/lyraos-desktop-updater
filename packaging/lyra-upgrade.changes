@@ -1,4 +1,13 @@
 -------------------------------------------------------------------
+Sun Sep 27 12:30:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
+
+- Prepare 0.2.6: permit exact package scopes on signed vendor-transition rules.
+- Preserve legacy pair-wide rules; reject null/empty/invalid scopes and mixed
+  broad/scoped grants for the same directed vendor pair.
+- Enforce the scope during planning, staging and offline revalidation without
+  adding a migration manifest or changing the normal vendor policy.
+
+-------------------------------------------------------------------
 Sat Sep 19 2026 - Rodrigo Brito <183213+britors@users.noreply.github.com>
 
 - Register systemd units before installation with the SUSE service macro.

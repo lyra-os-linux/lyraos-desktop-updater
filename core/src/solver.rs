@@ -48,6 +48,8 @@ pub struct SolverResult {
 pub struct VendorTransition {
     pub from: String,
     pub to: String,
+    /// None is a legacy pair-wide grant; Some allows only exact package names.
+    pub packages: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -64,10 +66,36 @@ pub fn valid_vendor(value: &str) -> bool {
     !value.trim().is_empty() && value.len() <= 512 && !value.chars().any(char::is_control)
 }
 
+pub(crate) fn valid_vendor_transitions(rules: &[VendorTransition]) -> bool {
+    let mut pairs = std::collections::BTreeMap::new();
+    rules.iter().all(|rule| {
+        if !valid_vendor(&rule.from) || !valid_vendor(&rule.to) {
+            return false;
+        }
+        if let Some(packages) = &rule.packages {
+            let unique: BTreeSet<_> = packages.iter().collect();
+            if packages.is_empty()
+                || unique.len() != packages.len()
+                || packages
+                    .iter()
+                    .any(|name| !crate::manifest::valid_package(name))
+            {
+                return false;
+            }
+        }
+        // A pair-wide grant must not silently override a package restriction.
+        let scoped = rule.packages.is_some();
+        pairs
+            .insert((&rule.from, &rule.to), scoped)
+            .is_none_or(|previous| previous == scoped)
+    })
+}
+
 pub fn vendor_policy_blockers(
     changes: &[PackageChange],
     policy: &SolverPolicy,
 ) -> Vec<PreflightIssue> {
+    let valid_rules = valid_vendor_transitions(&policy.allowed_vendor_transitions);
     changes
         .iter()
         .filter_map(|change| {
@@ -84,10 +112,15 @@ pub fn vendor_policy_blockers(
                 _ => match (from, to) {
                     (Some(from), Some(to)) => {
                         from == to
-                            || policy
-                                .allowed_vendor_transitions
-                                .iter()
-                                .any(|allowed| allowed.from == from && allowed.to == to)
+                            || (valid_rules
+                                && policy.allowed_vendor_transitions.iter().any(|allowed| {
+                                    allowed.from == from
+                                        && allowed.to == to
+                                        && allowed
+                                            .packages
+                                            .as_ref()
+                                            .is_none_or(|packages| packages.contains(&change.name))
+                                }))
                     }
                     _ => false,
                 },

@@ -81,6 +81,45 @@ class ReleaseManifestToolTests(unittest.TestCase):
         with self.assertRaises(release_manifest.ManifestError):
             release_manifest.validate(invalid)
 
+    def test_scoped_vendor_rule_is_preserved_in_signed_bytes(self) -> None:
+        document = fixture()
+        document["minimum_updater_version"] = "0.2.6"
+        rule = {"from": "SUSE", "to": "Lyra", "packages": ["portal", "portal-lang"]}
+        document["allowed_vendor_transitions"] = [rule]
+        encoded = release_manifest.canonical_bytes(release_manifest.validate(document))
+        self.assertEqual(json.loads(encoded)["allowed_vendor_transitions"], [rule])
+        self.assertEqual(release_manifest.canonical_bytes(release_manifest.validate(json.loads(encoded))), encoded)
+        legacy = fixture()
+        legacy["allowed_vendor_transitions"] = [{"from": "SUSE", "to": "Lyra"}]
+        self.assertNotIn("packages", release_manifest.validate(legacy)["allowed_vendor_transitions"][0])
+
+    def test_invalid_scopes_and_incidental_broad_grants_are_rejected(self) -> None:
+        for scope in [None, [], "*", ["*"], ["same", "same"], [1], [{}], [""], ["../path"], ["two names"]]:
+            document = fixture()
+            document["minimum_updater_version"] = "0.2.6"
+            document["allowed_vendor_transitions"] = [{"from": "SUSE", "to": "Lyra", "packages": scope}]
+            with self.subTest(scope=scope), self.assertRaises(release_manifest.ManifestError):
+                release_manifest.validate(document)
+        for rules in [
+            [{"from": "SUSE", "to": "Lyra"}, {"from": "SUSE", "to": "Lyra", "packages": ["portal"]}],
+            [{"from": "SUSE", "to": "Lyra", "packages": ["portal"]}, {"from": "SUSE", "to": "Lyra"}],
+        ]:
+            document = fixture()
+            document["minimum_updater_version"] = "0.2.6"
+            document["allowed_vendor_transitions"] = rules
+            with self.assertRaises(release_manifest.ManifestError): release_manifest.validate(document)
+
+    def test_scope_requires_updated_consumer_and_valid_vendor(self) -> None:
+        document = fixture()
+        document["allowed_vendor_transitions"] = [{"from": "SUSE", "to": "Lyra", "packages": ["portal"]}]
+        with self.assertRaisesRegex(release_manifest.ManifestError, "0.2.6"):
+            release_manifest.validate(document)
+        document["minimum_updater_version"] = "0.2.6"
+        for bad in ["", " ", "bad\nname", "x" * 513]:
+            document["allowed_vendor_transitions"][0]["from"] = bad
+            with self.subTest(bad=bad), self.assertRaises(release_manifest.ManifestError):
+                release_manifest.validate(document)
+
     def test_output_is_new_regular_file_and_never_overwritten(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "releases-v1.json"

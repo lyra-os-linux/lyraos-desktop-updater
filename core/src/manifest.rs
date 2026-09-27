@@ -52,6 +52,20 @@ pub struct RepositoryTransition {
 pub struct VendorTransitionWire {
     pub from: String,
     pub to: String,
+    /// Missing preserves the legacy vendor-pair rule. Explicit null is invalid.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_package_scope"
+    )]
+    pub packages: Option<Vec<String>>,
+}
+
+fn deserialize_package_scope<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Vec::<String>::deserialize(deserializer).map(Some)
 }
 
 impl ReleaseManifest {
@@ -64,6 +78,7 @@ impl ReleaseManifest {
                 .map(|transition| VendorTransition {
                     from: transition.from.clone(),
                     to: transition.to.clone(),
+                    packages: transition.packages.clone(),
                 })
                 .collect(),
             lockstep_packages: self.lockstep_packages.clone(),
@@ -135,6 +150,14 @@ pub fn validate_manifest_route(
     if current_updater < minimum_updater {
         return Err(ManifestError::UpdaterTooOld);
     }
+    if manifest
+        .allowed_vendor_transitions
+        .iter()
+        .any(|rule| rule.packages.is_some())
+        && minimum_updater < (0, 2, 6)
+    {
+        return Err(ManifestError::InvalidMinimumUpdaterVersion);
+    }
     if manifest.repositories.is_empty() {
         return Err(ManifestError::InvalidRepository);
     }
@@ -159,13 +182,9 @@ pub fn validate_manifest_route(
             return Err(ManifestError::InvalidFingerprint);
         }
     }
-    if manifest
-        .allowed_vendor_transitions
-        .iter()
-        .any(|transition| {
-            !crate::valid_vendor(&transition.from) || !crate::valid_vendor(&transition.to)
-        })
-        || manifest.minimum_free_space_bytes == 0
+    if !crate::solver::valid_vendor_transitions(
+        &manifest.solver_policy().allowed_vendor_transitions,
+    ) || manifest.minimum_free_space_bytes == 0
         || manifest
             .allowed_removals
             .iter()
@@ -252,7 +271,7 @@ fn valid_alias(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b':'))
 }
 
-fn valid_package(value: &str) -> bool {
+pub(crate) fn valid_package(value: &str) -> bool {
     !value.is_empty()
         && value
             .bytes()
