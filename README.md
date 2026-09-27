@@ -65,5 +65,7 @@ no manifesto assinado. A regra pode liberar somente o portal e suas traduções,
 sem permitir a mesma troca para outros RPMs. Manifestos anteriores continuam
 compatíveis; listas inválidas ou regras amplas que anulem a restrição bloqueiam.
 Veja o [contrato do solver](docs/lyra-upgrade-architecture.md#contrato-do-solver).
-Essa implementação ainda precisa de qualificação do RPM e do manifesto real
-antes de automatizar a entrega do backport do portal.
+O [RPM 0.2.6 foi qualificado em staging](docs/vendor-scope-staging-qualification.md),
+incluindo a regressão PackageKit com dois reinícios. O manifesto real, o fluxo
+completo de migração/recuperação e a candidata ISO ainda precisam passar pelos
+respectivos gates antes da entrega automática do backport do portal.
