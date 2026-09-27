@@ -33,11 +33,11 @@ if not Path('/test/prepared').exists():
             fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
             for target in [None,'/var/lib/PackageKit/prepared-update','/missing/foreign']:
                 if target:marker.symlink_to(target)
-                run(['/usr/libexec/lyra-upgrade-offline'])
+                run(['/usr/libexec/lyra-upgrade-offline', '--reboot'])
                 assert not root.exists()
                 if target:
                     assert str(marker.readlink())==target;marker.unlink()
-            run(['/usr/libexec/lyra-upgrade-offline'])
+            run(['/usr/libexec/lyra-upgrade-offline', '--reboot'])
     run(['rpm','-qa'])
     run(['zypper','--non-interactive','refresh'])
     run(['zypper','--no-refresh','list-updates'])
@@ -79,9 +79,9 @@ else:
                     for base in paths for p in base.rglob('*') if p.is_file()}
         before=digest()
         marker.symlink_to('/var/lib/PackageKit')
-        run(['/usr/libexec/lyra-upgrade-offline'])
+        run(['/usr/libexec/lyra-upgrade-offline', '--reboot'])
         assert str(marker.readlink())=='/var/lib/PackageKit' and digest()==before
-        marker.unlink();run(['/usr/libexec/lyra-upgrade-offline']);assert digest()==before
+        marker.unlink();run(['/usr/libexec/lyra-upgrade-offline', '--reboot']);assert digest()==before
         Path('/run/lock').mkdir(exist_ok=True)
         marker.symlink_to(operation)
         failed=subprocess.run(['/usr/libexec/lyra-upgrade-offline'],capture_output=True,text=True)

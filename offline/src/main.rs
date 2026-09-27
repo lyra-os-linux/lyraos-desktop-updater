@@ -17,6 +17,15 @@ mod request;
 const STATE_ROOT: &str = "/var/lib/lyra-upgrade/operations";
 
 fn main() {
+    let arguments: Vec<_> = std::env::args_os().skip(1).collect();
+    let reboot = match arguments.as_slice() {
+        [] => false,
+        [argument] if argument == "--reboot" => true,
+        _ => {
+            eprintln!("usage: lyra-upgrade-offline [--reboot]");
+            std::process::exit(2);
+        }
+    };
     let operation_dir = match request::resolve(Path::new("/system-update"), Path::new(STATE_ROOT)) {
         Ok(Some(path)) => path,
         Ok(None) => return,
@@ -32,10 +41,55 @@ fn main() {
             std::process::exit(1);
         }
     };
-    if let Err(error) = run(&operation_dir) {
+    let result = finish_owned_operation(
+        run(&operation_dir),
+        || mark_recovery(&operation_dir),
+        || {
+            if reboot {
+                reboot_after_cleanup(Path::new("/system-update"), || {
+                    require_success(
+                        command("/usr/bin/systemctl", &["--no-block", "reboot"]),
+                        "systemctl reboot",
+                    )
+                })?;
+            }
+            Ok(())
+        },
+    );
+    if let Err(error) = result {
         eprintln!("lyra-upgrade-offline: {error}");
-        mark_recovery(&operation_dir);
         std::process::exit(1);
+    }
+}
+
+// Called only after ownership resolution and the transaction lock. Foreign
+// requests return before here, including when systemd requests --reboot.
+fn finish_owned_operation(
+    result: Result<(), String>,
+    recover: impl FnOnce() -> Result<(), String>,
+    reboot: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    if let Err(error) = &result {
+        recover().map_err(|cleanup| format!("{error}; recovery cleanup failed: {cleanup}"))?;
+    }
+    reboot().map_err(|error| match &result {
+        Ok(()) => error,
+        Err(original) => format!("{original}; {error}"),
+    })?;
+    result
+}
+
+fn reboot_after_cleanup(
+    marker: &Path,
+    reboot: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    match fs::symlink_metadata(marker) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => reboot(),
+        // Never reboot over a replacement request, even a dangling symlink.
+        Ok(_) => Err("offline update marker remains; refusing to reboot".into()),
+        Err(error) => Err(format!(
+            "cannot check offline marker before reboot: {error}"
+        )),
     }
 }
 
@@ -306,38 +360,39 @@ fn synthetic_output(message: String) -> Output {
     }
 }
 
-fn mark_recovery(operation_dir: &Path) {
-    if request::require_current(
+fn mark_recovery(operation_dir: &Path) -> Result<(), String> {
+    request::require_current(
         Path::new("/system-update"),
         Path::new(STATE_ROOT),
         operation_dir,
-    )
-    .is_err()
-    {
-        return;
-    }
-    let Some(operation_id) = operation_dir.file_name().and_then(|name| name.to_str()) else {
-        return;
-    };
+    )?;
+    let operation_id = operation_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or("invalid operation id during recovery")?;
     if let Ok(mut state) = load_state(Path::new(STATE_ROOT), operation_id) {
         state.state = OperationState::NeedsRecovery;
         state.error_code = Some("OFFLINE_APPLY_FAILED".into());
         state.sequence = state.sequence.saturating_add(1);
-        let _ = save_state(Path::new(STATE_ROOT), &state);
+        save_state(Path::new(STATE_ROOT), &state).map_err(|_| "cannot persist recovery state")?;
     }
-    let _ = request::remove_current(
+    request::remove_current(
         Path::new("/system-update"),
         Path::new(STATE_ROOT),
         operation_dir,
-    );
+    )
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{prepare_offline_state, read_json, require_success, synthetic_output};
+    use super::{
+        finish_owned_operation, prepare_offline_state, read_json, reboot_after_cleanup,
+        require_success, synthetic_output,
+    };
     use lyra_upgrade_core::{
         BootVerification, OperationKind, OperationState, OperationStateRecord, ReleaseIdentity,
     };
+    use std::cell::Cell;
     use std::fs;
     use std::os::unix::fs::symlink;
     use std::path::PathBuf;
@@ -405,6 +460,72 @@ mod tests {
         let error =
             require_success(synthetic_output("partial write".into()), "dracut").unwrap_err();
         assert_eq!(error, "dracut failed: partial write");
+    }
+
+    #[test]
+    fn successful_apply_reboots_without_marking_recovery() {
+        let rebooted = Cell::new(false);
+        finish_owned_operation(
+            Ok(()),
+            || panic!("unexpected recovery"),
+            || {
+                rebooted.set(true);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(rebooted.get());
+    }
+
+    #[test]
+    fn failed_apply_reboots_only_after_recovery_cleanup_and_remains_failure() {
+        let recovered = Cell::new(false);
+        let error = finish_owned_operation(
+            Err("apply failed".into()),
+            || {
+                recovered.set(true);
+                Ok(())
+            },
+            || {
+                assert!(recovered.get());
+                Ok(())
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error, "apply failed");
+        let error = finish_owned_operation(
+            Err("apply failed".into()),
+            || Err("cannot save state".into()),
+            || panic!("must not reboot with failed cleanup"),
+        )
+        .unwrap_err();
+        assert!(error.contains("cannot save state"));
+    }
+
+    #[test]
+    fn reboot_failure_does_not_rewrite_successful_apply_as_recovery() {
+        assert_eq!(
+            finish_owned_operation(
+                Ok(()),
+                || panic!("unexpected recovery"),
+                || Err("reboot refused".into())
+            )
+            .unwrap_err(),
+            "reboot refused"
+        );
+    }
+
+    #[test]
+    fn reboot_requires_absent_marker_including_dangling_replacements() {
+        let root = temporary("reboot-marker");
+        let marker = root.join("system-update");
+        reboot_after_cleanup(&marker, || Ok(())).unwrap();
+        symlink(root.join("PackageKit-missing"), &marker).unwrap();
+        assert!(reboot_after_cleanup(&marker, || panic!("foreign reboot")).is_err());
+        fs::remove_file(&marker).unwrap();
+        fs::write(&marker, "replacement").unwrap();
+        assert!(reboot_after_cleanup(&marker, || panic!("replacement reboot")).is_err());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

@@ -1,6 +1,13 @@
 -------------------------------------------------------------------
 Sun Sep 27 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
 
+- Prepare 0.2.9: request reboot after an owned offline operation settles.
+- Keep PackageKit and absent markers as no-ops in automatic reboot mode.
+- Preserve recovery state before clearing the request on apply failure.
+
+-------------------------------------------------------------------
+Sun Sep 27 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
+
 - Prepare 0.2.8: query Snapper readiness through the existing read broker.
 - Keep preview unprivileged and snapshot access restricted. Return one
   boolean through a bounded native snapperd query, failing closed on errors.
