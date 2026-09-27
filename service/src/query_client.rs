@@ -1,4 +1,4 @@
-//! Only private status and the global replay counter require this read broker.
+//! Private status, replay counter and Snapper readiness use this read broker.
 use lyra_upgrade_protocol::{Request, Response};
 use std::io::{BufRead, BufReader, Write};
 use std::os::fd::{AsRawFd, RawFd};

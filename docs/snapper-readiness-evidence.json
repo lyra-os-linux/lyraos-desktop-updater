@@ -1,0 +1,77 @@
+{
+  "native_broker": {
+    "configured": {
+      "kind": "RecoveryReadiness",
+      "request_id": "snapper-native",
+      "snapper_root_configured": true
+    },
+    "daemon_unavailable": {
+      "kind": "RecoveryReadiness",
+      "request_id": "snapper-native",
+      "snapper_root_configured": false
+    },
+    "restored": {
+      "kind": "RecoveryReadiness",
+      "request_id": "snapper-native",
+      "snapper_root_configured": true
+    },
+    "direct_user_access_still_denied": true,
+    "temporary_candidate_binary_sha256": "a9b2ef793564d6d13a25aa7dffb78330091a5b89c9ac360a2a1cb21b4b6d72ba",
+    "shipped_binary_backup_sha256": "6e8a7707a7de9f7bcec35f248fe29a36d520ebcc9fa67f9ba5b4e0496081095d",
+    "broker_unit_unchanged": [
+      "S.5....T.  c /etc/lyra-upgrade/channel",
+      "S.5....T.    /usr/libexec/lyra-upgrade-service"
+    ]
+  },
+  "signed_preview": {
+    "result": "Plan",
+    "plan_sha256": "6be9268ddebb196fdddab1eea636cf685859be187fc083bcaefc5e8a47d65081",
+    "manifest_sha256": "5ec508afcb89358572c3b1cdd15d0543dce092f5a49f563b1f3fa914f557ac70",
+    "operation": "PackageMigration",
+    "source": {
+      "version": "1.1",
+      "edition": "desktop",
+      "architecture": "x86_64",
+      "build_id": "lyra-release-1.1"
+    },
+    "target": {
+      "version": "1.1",
+      "edition": "desktop",
+      "architecture": "x86_64",
+      "build_id": "lyra-release-1.1"
+    },
+    "package_changes": [
+      {
+        "name": "xdg-desktop-portal-gnome",
+        "architecture": "x86_64",
+        "action": "Upgrade",
+        "current_version": "48.0-160100.2.1",
+        "proposed_version": "48.0-160100.2.1.lyra1.160101.1",
+        "current_vendor": "SUSE LLC <https://www.suse.com/>",
+        "proposed_vendor": "obs://build.opensuse.org/home:rodrigosbrito",
+        "repository_alias": "lyra-portal-staging",
+        "download_bytes": 0,
+        "installed_size_before": 0,
+        "installed_size_after": 0
+      }
+    ],
+    "installed_package_count": 1152,
+    "preflight": {
+      "required_bytes": 4294967296,
+      "available_bytes": 15689441280,
+      "blockers": [],
+      "third_party_repositories": [
+        "lyra-portal-staging",
+        "repo-packman-essentials"
+      ],
+      "held_packages": [],
+      "orphaned_packages": []
+    },
+    "rpm_inventory_and_repository_files_unchanged": true,
+    "full_local_response_sha256": "19f260575f030aac3617662240fc556ab10b440fa03a62d3d98d54e13be92a92"
+  },
+  "limits": [
+    "Local candidate service over installed staging RPM0.2.7, before0.2.8 version bump; no0.2.8 RPM qualification",
+    "No authenticated migration, offline cycle or rollback yet"
+  ]
+}

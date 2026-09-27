@@ -1,5 +1,5 @@
 use lyra_upgrade_core::{
-    HostFacts, PreflightPolicy, PreflightReport, SystemBackend, discover_host, evaluate_preflight,
+    HostFacts, PreflightPolicy, PreflightReport, discover_host, evaluate_preflight,
 };
 use serde::Serialize;
 
@@ -8,13 +8,14 @@ fn main() {
         eprintln!("usage: lyra-upgrade [inspect]");
         std::process::exit(2);
     }
-    let mut facts = match discover_host(&SystemBackend) {
-        Ok(facts) => facts,
-        Err(error) => {
-            eprintln!("host discovery failed: {error:?}");
-            std::process::exit(1);
-        }
-    };
+    let mut facts =
+        match discover_host(&lyra_upgrade_service::readonly_discovery::ReadOnlyDiscovery) {
+            Ok(facts) => facts,
+            Err(error) => {
+                eprintln!("host discovery failed: {error:?}");
+                std::process::exit(1);
+            }
+        };
     facts.installed_packages = match lyra_upgrade_service::vendor_metadata::installed_packages(None)
     {
         Ok(packages) => packages,

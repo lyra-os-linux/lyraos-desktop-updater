@@ -5,7 +5,7 @@ use std::sync::{Arc, Condvar, Mutex};
 
 use lyra_upgrade_core::{
     BootVerification, OperationKind, OperationState, OperationStateRecord, PreflightPolicy,
-    ReleaseManifest, SystemBackend, discover_host, evaluate_preflight, load_state, save_state,
+    ReleaseManifest, discover_host, evaluate_preflight, load_state, save_state,
 };
 use lyra_upgrade_protocol::{
     EventLevel, EventSource, OperationEvent, PlannedUpdate, RecoveryAction, Request, Response,
@@ -63,6 +63,13 @@ impl Service {
         match request {
             Request::CheckRelease { .. } => self.check_release(request_id),
             Request::ReadTrustState { .. } => self.trust_state(request_id),
+            Request::ReadRecoveryReadiness { .. } => {
+                lyra_upgrade_service::query_client::request(&Request::ReadRecoveryReadiness {
+                    protocol_version: lyra_upgrade_protocol::PROTOCOL_VERSION,
+                    request_id: request_id.clone(),
+                })
+                .unwrap_or_else(|error| rejected(request_id, &error))
+            }
             Request::Inspect { .. } => self.inspect(request_id),
             Request::PlanUpdate { .. } => self.plan_update(request_id),
             Request::PlanReleaseUpgrade {
@@ -195,7 +202,7 @@ impl Service {
     }
 
     fn inspect(&self, request_id: String) -> Response {
-        match discover_host(&SystemBackend) {
+        match discover_host(&lyra_upgrade_service::readonly_discovery::ReadOnlyDiscovery) {
             Ok(mut facts) => {
                 facts.installed_packages =
                     match lyra_upgrade_service::vendor_metadata::installed_packages(None) {
@@ -914,6 +921,9 @@ fn query_response(service: &Service, request: Request) -> Response {
             ..
         } => service.status(id, operation_id, after_sequence.unwrap_or(0)),
         Request::ReadTrustState { .. } => service.trust_state(id),
+        Request::ReadRecoveryReadiness { .. } => {
+            lyra_upgrade_service::readonly_discovery::recovery_readiness(id)
+        }
         _ => rejected(id, "READ_ONLY_REQUEST_REQUIRED"),
     }
 }
