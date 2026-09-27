@@ -55,3 +55,7 @@ A implementação 0.2.4 do [aceite Desktop #13](docs/desktop-13-acceptance.md) u
 protocolo/plano v3. Abrir, consultar, planejar e acompanhar não solicitam senha.
 Autenticação ocorre somente nas ações administrativas explícitas. A promoção
 aguarda os ensaios GNOME de sucessor/boot/rollback nas issues Desktop #24/#26.
+
+A [qualificação de coexistência com PackageKit](docs/packagekit-offline-qualification.md)
+reproduz a falha anterior e valida a saída sem efeitos para pedidos de outra
+ferramenta durante um ciclo offline com reinicializações reais.

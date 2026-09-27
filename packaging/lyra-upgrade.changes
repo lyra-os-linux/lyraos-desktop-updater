@@ -1,16 +1,37 @@
 -------------------------------------------------------------------
-Tue Sep 15 12:00:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
+Sat Sep 19 2026 - Rodrigo Brito <183213+britors@users.noreply.github.com>
 
-- Prepare 0.2.4: reconcile Desktop #13 implementation and recovery criteria.
-- Separate unprivileged inspection/planning from explicit administrative
-  confirmation; provide a read-only systemd broker with peer UID checks.
-- Preview signed release offers in Portuguese, English and Spanish with
-  verified display cache, package review and personal-backup acknowledgement.
-- Bind full installed inventory and exact release builds to reviewed plans;
-  fail closed on replay-state corruption, expiry and ambiguous signing keys.
-- Retain and authenticate signed bytes offline; audit package preservation,
-  configuration artifacts and boot recovery after interrupted operations.
-- Keep real GNOME successor, reboot/rollback and ISO promotion gates pending.
+- Register systemd units before installation with the SUSE service macro.
+- Prepare 0.2.5: recognize ownership of offline update markers before
+  taking the Lyra transaction lock or loading operation state.
+- Exit successfully for absent and foreign markers, including PackageKit
+  requests when the Lyra operations directory does not exist.
+- Preserve rejection of broken Lyra requests and recheck ownership before
+  application, recovery and marker removal.
+- Add regression tests and a disposable PackageKit/zypp offline reboot cycle.
+
+-------------------------------------------------------------------
+Tue Sep 15 2026 - Rodrigo Brito <183213+britors@users.noreply.github.com>
+
+- Refresh 0.2.4 from integrated Git 74ca967f6766380a2d7e7652b9ad134942e43410.
+- Ship signed release discovery, review, backup and recovery flow.
+- Expose read-only queries without authentication; authorize administrative actions.
+- Use protocol and plan v3 with complete inventory and post-boot checks.
+
+-------------------------------------------------------------------
+Fri Sep 11 2026 - Rodrigo Brito <rodrigo@lyraos.com.br>
+
+- Refresh 0.2.3 from integrated Git 662dbe2c1173149db35e6ecab7d6430dccc96517.
+- Ship integrated planner, vendor policy, rollback and recovery fixes.
+- Preserve corrupt state and bound event retention without corrupting JSONL.
+- Use isolated offline caches and read-only post-boot verification.
+- Include recovery-format metadata and required runtime tools.
+
+-------------------------------------------------------------------
+Wed Sep  2 20:13:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
+
+- Rebuild the unchanged Lyra 1.1 manifest and VM evidence fixes through the
+  reviewed staging channel to restore release promotion provenance.
 
 -------------------------------------------------------------------
 Wed Sep  2 12:00:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
