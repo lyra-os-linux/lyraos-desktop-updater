@@ -56,7 +56,7 @@ protocolo/plano v3. Abrir, consultar, planejar e acompanhar não solicitam senha
 Autenticação ocorre somente nas ações administrativas explícitas. A promoção
 aguarda os ensaios GNOME de sucessor/boot/rollback nas issues Desktop #24/#26.
 
-A versão 0.2.5 acrescenta autorização de troca de fornecedor por nomes exatos
+A versão 0.2.6 acrescenta autorização de troca de fornecedor por nomes exatos
 no manifesto assinado. A regra pode liberar somente o portal e suas traduções,
 sem permitir a mesma troca para outros RPMs. Manifestos anteriores continuam
 compatíveis; listas inválidas ou regras amplas que anulem a restrição bloqueiam.

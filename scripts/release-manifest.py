@@ -176,8 +176,8 @@ def validate(document: object) -> dict:
                 or len(set(packages)) != len(packages)
             ):
                 raise ManifestError("vendor transition packages must be valid, nonempty and unique")
-            if version_base(manifest["minimum_updater_version"]) < (0, 2, 5):
-                raise ManifestError("package-scoped vendor transitions require updater 0.2.5")
+            if version_base(manifest["minimum_updater_version"]) < (0, 2, 6):
+                raise ManifestError("package-scoped vendor transitions require updater 0.2.6")
         pair = (transition["from"], transition["to"])
         if pair in pairs and pairs[pair] != scoped:
             raise ManifestError("cannot mix scoped and pair-wide vendor transitions for the same pair")

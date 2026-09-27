@@ -506,7 +506,7 @@ mod tests {
         super::fs::write(&keyring, run(&["--export"])).unwrap();
         let document = home.path().join("manifest.json");
         let mut manifest = serde_json::to_value(time_fixture()).unwrap();
-        manifest["minimum_updater_version"] = serde_json::json!("0.2.5");
+        manifest["minimum_updater_version"] = serde_json::json!("0.2.6");
         manifest["allowed_vendor_transitions"] = serde_json::json!([
             {"from":"SUSE", "to":"Lyra", "packages":["portal", "portal-lang"]}
         ]);

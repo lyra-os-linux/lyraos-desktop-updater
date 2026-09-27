@@ -51,7 +51,7 @@
           "from": { "type": "string", "minLength": 1 },
           "to": { "type": "string", "minLength": 1 },
           "packages": {
-            "description": "Exact package names; omission preserves legacy pair-wide authorization. Requires minimum_updater_version >= 0.2.5. Do not mix scoped and pair-wide entries for one directed vendor pair.",
+            "description": "Exact package names; omission preserves legacy pair-wide authorization. Requires minimum_updater_version >= 0.2.6. Do not mix scoped and pair-wide entries for one directed vendor pair.",
             "type": "array",
             "minItems": 1,
             "uniqueItems": true,

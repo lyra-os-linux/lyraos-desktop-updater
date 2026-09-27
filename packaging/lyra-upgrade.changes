@@ -1,7 +1,7 @@
 -------------------------------------------------------------------
 Sun Sep 27 12:30:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
 
-- Prepare 0.2.5: permit exact package scopes on signed vendor-transition rules.
+- Prepare 0.2.6: permit exact package scopes on signed vendor-transition rules.
 - Preserve legacy pair-wide rules; reject null/empty/invalid scopes and mixed
   broad/scoped grants for the same directed vendor pair.
 - Enforce the scope during planning, staging and offline revalidation without

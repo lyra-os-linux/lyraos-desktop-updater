@@ -154,7 +154,7 @@ pub fn validate_manifest_route(
         .allowed_vendor_transitions
         .iter()
         .any(|rule| rule.packages.is_some())
-        && minimum_updater < (0, 2, 5)
+        && minimum_updater < (0, 2, 6)
     {
         return Err(ManifestError::InvalidMinimumUpdaterVersion);
     }

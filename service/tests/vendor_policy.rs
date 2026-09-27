@@ -558,7 +558,7 @@ fn large_upgrade_preserves_all_vendor_changes_without_duplicate_plan_entries() {
 
 fn scoped_manifest() -> ReleaseManifest {
     let mut manifest = manifest();
-    manifest.minimum_updater_version = "0.2.5".into();
+    manifest.minimum_updater_version = "0.2.6".into();
     manifest.allowed_vendor_transitions[0].packages = Some(vec!["lyra-vendor-fixture".into()]);
     manifest
 }
@@ -673,7 +673,7 @@ fn malformed_or_ambiguous_scope_never_becomes_a_pair_wide_grant() {
                 &manifest,
                 &facts().release,
                 None,
-                "0.2.5",
+                "0.2.6",
                 lyra_upgrade_core::ManifestChannelPolicy::Testing
             ),
             Err(lyra_upgrade_core::ManifestError::InvalidPolicy)
@@ -697,7 +697,7 @@ fn malformed_or_ambiguous_scope_never_becomes_a_pair_wide_grant() {
                 &manifest,
                 &facts().release,
                 None,
-                "0.2.5",
+                "0.2.6",
                 lyra_upgrade_core::ManifestChannelPolicy::Testing
             ),
             Err(lyra_upgrade_core::ManifestError::InvalidPolicy)
@@ -721,14 +721,14 @@ fn scoped_manifest_requires_a_capable_updater_floor() {
             lyra_upgrade_core::ManifestChannelPolicy::Testing,
         )
     };
-    assert_eq!(validate(&scoped, "0.2.5"), Ok(()));
-    assert_eq!(
-        validate(&scoped, "0.2.4"),
-        Err(lyra_upgrade_core::ManifestError::UpdaterTooOld)
-    );
-    scoped.minimum_updater_version = "0.2.4".into();
+    assert_eq!(validate(&scoped, "0.2.6"), Ok(()));
     assert_eq!(
         validate(&scoped, "0.2.5"),
+        Err(lyra_upgrade_core::ManifestError::UpdaterTooOld)
+    );
+    scoped.minimum_updater_version = "0.2.5".into();
+    assert_eq!(
+        validate(&scoped, "0.2.6"),
         Err(lyra_upgrade_core::ManifestError::InvalidMinimumUpdaterVersion)
     );
 }
