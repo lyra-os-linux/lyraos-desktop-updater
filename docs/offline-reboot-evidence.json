@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-27",
+  "passed": true,
+  "qualification": "local offline0.2.9 candidate over actual Updater RPM0.2.8; not RPM0.2.9 qualification",
+  "success": {
+    "passed": true,
+    "automatic_reboot": true,
+    "candidate_not_published_rpm": true,
+    "offline_sha256": "eaa841c24056e8f5733c02fc37e3df13cd3a66595632abf33a3b90565f303bec",
+    "unit": "[Unit]\nDescription=Apply a staged Lyra OS release upgrade\nDocumentation=https://github.com/lyra-os-linux/lyraos-desktop-updater\nDefaultDependencies=no\nConditionPathIsSymbolicLink=/system-update\nAfter=local-fs.target\nBefore=system-update.target shutdown.target\nConflicts=shutdown.target\n\n[Service]\nType=oneshot\nPrivateNetwork=yes\nExecStart=/usr/libexec/lyra-upgrade-offline --reboot\nStandardOutput=journal\nStandardError=journal\nTimeoutStartSec=infinity\n\n[Install]\nWantedBy=system-update.target\n",
+    "previous_boot_worker_journal": "Sep 27 22:23:33 lyra-portal-test systemd[1]: Starting Apply a staged Lyra OS release upgrade...\nSep 27 22:23:37 lyra-portal-test systemd[1]: lyra-upgrade-offline.service: Main process exited, code=killed, status=15/TERM\nSep 27 22:23:37 lyra-portal-test systemd[1]: lyra-upgrade-offline.service: Failed with result 'signal'.\nSep 27 22:23:37 lyra-portal-test systemd[1]: Stopped Apply a staged Lyra OS release upgrade.\nSep 27 22:23:37 lyra-portal-test systemd[1]: lyra-upgrade-offline.service: Consumed 3.575s CPU time.\n",
+    "previous_boot_journal_available": true,
+    "migration": {
+      "passed": true,
+      "operation_id": "b5daba52-165b-4c35-bb72-966aa9173076",
+      "state": {
+        "schema_version": 1,
+        "operation_id": "b5daba52-165b-4c35-bb72-966aa9173076",
+        "sequence": 8,
+        "operation": "PackageMigration",
+        "state": "Completed",
+        "source": {
+          "version": "1.1",
+          "edition": "desktop",
+          "architecture": "x86_64",
+          "build_id": "lyra-release-1.1"
+        },
+        "target": {
+          "version": "1.1",
+          "edition": "desktop",
+          "architecture": "x86_64",
+          "build_id": "lyra-release-1.1"
+        },
+        "plan_sha256": "01a8291f8f3d4baaa213767ff4381555a724e8f0e5521a1ef79e79817992bf12",
+        "manifest_sha256": "5ec508afcb89358572c3b1cdd15d0543dce092f5a49f563b1f3fa914f557ac70",
+        "snapshot_number": 2,
+        "last_completed_step": "post-boot-verification",
+        "error_code": null,
+        "boot_verification": "Passed",
+        "created_at": "2026-09-27T22:22:01.221708043Z",
+        "updated_at": "2026-09-27T22:22:01.221708043Z"
+      },
+      "added": [
+        "xdg-desktop-portal-gnome|x86_64|48.0-160100.2.1.lyra1.160101.1|obs://build.opensuse.org/home:rodrigosbrito"
+      ],
+      "removed": [
+        "xdg-desktop-portal-gnome|x86_64|48.0-160100.2.1|SUSE LLC <https://www.suse.com/>"
+      ],
+      "repositories_unchanged": true,
+      "boot_files_unchanged": true,
+      "translation_absence_preserved": true,
+      "trust": {
+        "kind": "TrustState",
+        "request_id": "post-main-trust",
+        "last_manifest_sequence": 1
+      },
+      "portal_rpm_verify_passed": true
+    },
+    "offline_serial_sha256": "977cebd51be1636812df8a1d8b22762d39ce29d3065da062e80d6a6b5aa46314",
+    "automatic_reboot_evidence": "QEMU -no-reboot exited after the native worker; no guest manual reboot command in this phase; offline serial ends with reboot: Restarting system"
+  },
+  "owned_failure": {
+    "passed": true,
+    "state": {
+      "schema_version": 1,
+      "operation_id": "00000000-0000-4000-8000-000000000029",
+      "sequence": 2,
+      "operation": "PackageMigration",
+      "state": "NeedsRecovery",
+      "source": {
+        "version": "1.1",
+        "edition": "desktop",
+        "architecture": "x86_64",
+        "build_id": "lyra-release-1.1"
+      },
+      "target": {
+        "version": "1.1",
+        "edition": "desktop",
+        "architecture": "x86_64",
+        "build_id": "lyra-release-1.1"
+      },
+      "plan_sha256": "01a8291f8f3d4baaa213767ff4381555a724e8f0e5521a1ef79e79817992bf12",
+      "manifest_sha256": "5ec508afcb89358572c3b1cdd15d0543dce092f5a49f563b1f3fa914f557ac70",
+      "snapshot_number": 2,
+      "last_completed_step": "fixture-missing-manifest",
+      "error_code": "OFFLINE_APPLY_FAILED",
+      "boot_verification": "Pending",
+      "created_at": "2026-09-27T22:22:01.221708043Z",
+      "updated_at": "2026-09-27T22:22:01.221708043Z"
+    },
+    "rpm_inventory_unchanged": true,
+    "trust_unchanged": true,
+    "marker_removed": true,
+    "fault": "deliberate owned operation missing its staged manifest",
+    "automatic_reboot_evidence": "host offline serial and QEMU process exit"
+  },
+  "packagekit": {
+    "passed": true,
+    "phases": [
+      "prepare",
+      "offline",
+      "verify"
+    ],
+    "logs_sha256": {
+      "prepare.log": "4d78fc3a096db8b0fa1516e63af198890fdeaa6f85d8afda62a373feeb52f2e1",
+      "offline.log": "ed6e2546af0f020073f8aa50f1bd177e27c6ddfd5836b8416242625469faa150",
+      "verify.log": "28a56734c72d11f87252f00db2e9e2e4dc5c4c3cf8c5d68e814169c870716e18"
+    }
+  },
+  "serial_logs_sha256": {
+    "main-offline-029-candidate-serial.log": "977cebd51be1636812df8a1d8b22762d39ce29d3065da062e80d6a6b5aa46314",
+    "failure-offline-029-candidate-serial.log": "2e3c13969e4b3993b3d4aebd07d0d79778c3f16278bd01e7e74297e6164c1e01"
+  },
+  "limitations": [
+    "SELinux permissive in disposable portal fixture",
+    "No production/ISO promotion",
+    "TTY Polkit agent; GNOME dialog not tested",
+    "Translations and rollback still pending"
+  ]
+}

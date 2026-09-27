@@ -30,7 +30,18 @@ falha de aplicação; seu estado `AwaitingReboot` permanece disponível.
 - VM nativa PackageKit/zypp: preparação, aplicação offline e boot de verificação
   aprovados com a unidade corrigida. Pedidos estrangeiros/ausentes com `--reboot`
   permanecem sem efeito mesmo com lock ocupado ou estado Lyra corrompido.
-- Ensaio de operação própria com manifesto oficial em VM UEFI/Btrfs em andamento.
+- VM UEFI/GRUB/Btrfs com manifesto oficial: preparação autenticada via Polkit,
+  aplicação real do portal, reinício automático e verificador `Completed/Passed`.
+  Somente o portal mudou; repositórios/boot preservados, traduções ausentes.
+- Falha controlada por manifesto preparado ausente: `NeedsRecovery` persistido,
+  marcador removido, reinício automático, pacotes e sequência de confiança intactos.
+
+[Registro dos ensaios](offline-reboot-evidence.json). O worker candidato local
+foi instalado sobre o RPM 0.2.8 somente na VM. Os boots offline saíram por
+solicitação do próprio worker; o harness QEMU com `-no-reboot` iniciou depois o
+próximo boot. A tentativa anterior do RPM 0.2.8 exigiu reinício manual e não é
+contada como ciclo automático. O journal da fixture é volátil; os logs seriais
+completos de cada boot foram preservados fora da VM e seus hashes registrados.
 
 Esta correção ainda não qualifica um RPM 0.2.9 publicado, recuperação via GRUB,
 ISO ou promoção do canal release. A fixture usa SELinux permissivo e autenticação
