@@ -2,6 +2,7 @@ pub mod event_log;
 pub mod executor;
 pub mod inventory;
 pub mod manifest_fetch;
+pub mod migration;
 pub mod planner;
 pub mod process;
 pub mod query_client;

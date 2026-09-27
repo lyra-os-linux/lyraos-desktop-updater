@@ -181,11 +181,12 @@ parte dos bytes assinados e do hash do manifesto confirmado: remover, acrescenta
 ou trocar os nomes exige nova assinatura e novo plano. Downgrades, remoções,
 lockstep, identidade RPM e os demais gates conservam suas próprias regras.
 
-Essa capacidade não publica uma transição SUSE→OBS nem seleciona um RPM. A
-entrega do portal (#125 do Desktop) ainda exige RPM 0.2.6 do atualizador
-qualificado, manifesto assinado/revisado, resolução exata, ensaio offline e
-recuperação. O rollback do ensaio de pacote não autoriza downgrade pelo fluxo
-normal de atualização de versão.
+Essa capacidade não publica uma transição SUSE→OBS nem seleciona um RPM. O RPM
+0.2.6 foi qualificado em staging, mas a entrega do portal (#125 do Desktop)
+também precisa da migração dentro da mesma identidade introduzida em 0.2.7.
+Ver [contrato de migração de pacotes](package-migration.md). Manifesto assinado,
+RPM exato do atualizador, ensaio do portal offline e recuperação continuam
+sendo gates de entrega; o rollback não autoriza downgrade pela rota normal.
 
 Na atualização de versão, solver e inventário usam o contexto de destino:
 `repos.d`, `cache`, `cache/raw`, `cache/solv` e `cache/packages` da operação.

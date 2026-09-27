@@ -101,3 +101,25 @@ test('preflight blockers explain the condition in every supported language witho
     assert(!f.calls.some(request=>request.kind==='Start'));
   }
 });
+
+
+test('same-release fix is reviewed as maintenance and still requires backup acknowledgement', async () => {
+  const f=fixture();await drain();
+  const response=plan();response.plan.operation='PackageMigration';response.plan.target.version='1.1';
+  f.state.reply = request => request.kind === 'CheckRelease'
+    ? {kind:'ReleaseOffer',manifest_sha256:'b'.repeat(64),manifest:{target:{version:'1.1',build_id:'lyra-release-1.1'},package_migration:[{name:'portal'}]}}
+    : request.kind === 'PlanReleaseUpgrade' ? response : {kind:'Accepted'};
+  await f.run('checkRelease()');
+  assert.match(f.node('#release-status').textContent,/Correção do sistema disponível/);
+  await f.run('planRelease()');
+  assert.match(f.node('#plan-summary').textContent,/correção do sistema/);
+  assert.doesNotMatch(f.node('#plan-summary').textContent,/1.1 → 1.1/);
+  assert.match(f.node('#repository-plan').textContent,/preservados/);
+  assert.equal(f.node('#backup-confirmation').hidden,false);
+  assert.equal(f.node('#confirm').disabled,true);
+  await f.run('confirmUpdate()');
+  assert.equal(f.calls.filter(r=>r.kind==='Start').length,0);
+  f.node('#backup-ack').checked=true;
+  await f.run('confirmUpdate()');
+  assert.equal(f.calls.filter(r=>r.kind==='Start').length,1);
+});

@@ -120,6 +120,44 @@ class ReleaseManifestToolTests(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(release_manifest.ManifestError):
                 release_manifest.validate(document)
 
+    def migration(self):
+        document = fixture()
+        document["source"]["version"] = "1.1"
+        document["target"] = dict(document["source"])
+        document["minimum_updater_version"] = "0.2.7"
+        document["lockstep_packages"] = []
+        document["package_migration"] = [{"name":"portal","architecture":"x86_64","from_version":"1-1","from_vendor":"SUSE","to_version":"2-1","to_vendor":"OBS","repository_alias":"repo-lyra-successor","sha256":"a"*64,"if_installed":False}]
+        document["allowed_vendor_transitions"] = [{"from":"SUSE","to":"OBS","packages":["portal"]}]
+        return document
+
+    def test_same_release_migration_is_canonical_with_explicit_contract(self):
+        document = self.migration()
+        encoded = release_manifest.canonical_bytes(release_manifest.validate(document))
+        self.assertEqual(json.loads(encoded), document)
+        self.assertEqual(release_manifest.canonical_bytes(release_manifest.validate(json.loads(encoded))), encoded)
+        del document["package_migration"]
+        with self.assertRaises(release_manifest.ManifestError): release_manifest.validate(document)
+
+    def test_migration_rejects_weakened_or_unknown_policy(self):
+        for variant in range(13):
+            document = self.migration()
+            entry = document["package_migration"][0]
+            if variant == 0: document["minimum_updater_version"] = "0.2.6"
+            elif variant == 1: document["target"]["build_id"] = "changed"
+            elif variant == 2: document["package_migration"] = None
+            elif variant == 3: document["package_migration"] = []
+            elif variant == 4: document["package_migration"].append(dict(entry))
+            elif variant == 5: entry["sha256"] = "bad"
+            elif variant == 6: entry["if_installed"] = True
+            elif variant == 7: entry["to_version"] = "2*"
+            elif variant == 8: document["allowed_vendor_transitions"][0].pop("packages")
+            elif variant == 9: document["allowed_removals"] = ["unrelated"]
+            elif variant == 10: entry["repository_alias"] = "missing"
+            elif variant == 11: entry["command"] = "arbitrary"
+            else: entry["to_version"] = entry["from_version"]
+            with self.subTest(variant=variant), self.assertRaises(release_manifest.ManifestError):
+                release_manifest.validate(document)
+
     def test_output_is_new_regular_file_and_never_overwritten(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "releases-v1.json"

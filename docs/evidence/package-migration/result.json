@@ -1,0 +1,98 @@
+{
+  "date": "2026-09-27",
+  "updater_version": "0.2.7",
+  "native": {
+    "results": [
+      {
+        "scenario": "upgrade-vendor",
+        "result": "PASS",
+        "cached_apply": true,
+        "repositories_preserved": true,
+        "repeat": "AlreadyApplied"
+      },
+      {
+        "scenario": "vendor-only",
+        "result": "PASS",
+        "rejected": "InvalidPolicy",
+        "forced_reinstall": false
+      }
+    ],
+    "limits": [
+      "No boot or Polkit qualification",
+      "Fixture signing key, not release key"
+    ]
+  },
+  "vm": {
+    "success": {
+      "result": "PASS",
+      "scenario": "success",
+      "phases": [
+        "online",
+        "offline",
+        "verify"
+      ],
+      "binaries": {
+        "lyra-upgrade-offline": "82442e8f9714f97c0b25c3c351d677b5e9b40d3e032bdbdd36a7e5ed6c989e4c",
+        "lyra-upgrade-service": "23571e1cb5dbd370f76450bbea776d0cb00f9dca0734809df662d0ce3032b20a",
+        "lyra-upgrade-verify": "3f4dd8b4928bbae265d4da36a777043d6d2e6140bf09867ec9e2e52548728132"
+      },
+      "kernel": "vmlinuz-6.12.0-160100.5-default",
+      "limits": [
+        "Fixture packages and ephemeral manifest signing key",
+        "Authenticated UID fixture, not interactive Polkit",
+        "Secure Boot disabled fixture; no bootloader rebuild",
+        "Does not qualify portal RPM or ISO"
+      ]
+    },
+    "rollback": {
+      "result": "PASS",
+      "scenario": "rollback",
+      "phases": [
+        "online",
+        "offline",
+        "verify",
+        "rollback"
+      ],
+      "binaries": {
+        "lyra-upgrade-offline": "82442e8f9714f97c0b25c3c351d677b5e9b40d3e032bdbdd36a7e5ed6c989e4c",
+        "lyra-upgrade-service": "23571e1cb5dbd370f76450bbea776d0cb00f9dca0734809df662d0ce3032b20a",
+        "lyra-upgrade-verify": "3f4dd8b4928bbae265d4da36a777043d6d2e6140bf09867ec9e2e52548728132"
+      },
+      "kernel": "vmlinuz-6.12.0-160100.5-default",
+      "limits": [
+        "Fixture packages and ephemeral manifest signing key",
+        "Authenticated UID fixture, not interactive Polkit",
+        "Secure Boot disabled fixture; no bootloader rebuild",
+        "Does not qualify portal RPM or ISO"
+      ]
+    }
+  },
+  "logs": {
+    "success-online.log": "7242c964f0f855d9a991166f5ea658414d1f0d6f2266106bdd536a778e55f302",
+    "success-offline.log": "b3d11ce7bea4924f2b8f52dd691eb90efd91ba790aefab5c77424da5540d0912",
+    "success-verify.log": "aabcedd1b216059c7df89e23c87ac247d6c915b5ff899567ed7ed650dbe3dbc5",
+    "rollback-online.log": "2ccf76f20eec035cd5024c7c747bd6622d11b16263476bf233ca19d44bf39718",
+    "rollback-offline.log": "7aa4a5024d2e75e16ee204aefc5e4650ec636ac375096cf12d88553435381a07",
+    "rollback-verify.log": "0c417a76dc9e3751d7e44f4eb3ed9ed25925a2b36bd0f38acb9b61e758d01812",
+    "rollback-rollback.log": "34a8e4fc7454f393af223fada4fe55007b3796326b46009f60112f3df52b7ab7"
+  },
+  "rust_tests": 145,
+  "python_tests": 35,
+  "clippy": "PASS --all-targets --all-features -D warnings",
+  "delivery_status": {
+    "obs_0_2_7": "not built",
+    "portal_migration": "not qualified",
+    "production_manifest": "not signed or published",
+    "host_packages_changed": false
+  },
+  "raw_log_sha256": {
+    "success-online.log": "f2688b7f145451c93f15701f71fcf40748959e80a5f32002f806304215081cef",
+    "success-offline.log": "52da887e46511e7087cccc60a7ce5ef5b64ede58a17b3fc4a3b5d9be39f051d5",
+    "success-verify.log": "f0789c688255e9cb6932a322be5c01b223813b2a84dba723ce35ea8f064a6df1",
+    "rollback-online.log": "4d8a7e286439582b930d608dce94d4acd07e4e3781a50f7dd4ab61f192cbd25a",
+    "rollback-offline.log": "3f1c4b7f4487e721962d0ccbbfa7b9afb04967dc0d147b266e14dcbc582dfdf4",
+    "rollback-verify.log": "cbbdcc3ee3ee8dc22b554aff638295602f72682dd0541f9cf2efead4ffd5ddb4",
+    "rollback-rollback.log": "f2c74c4b2c42fec44c1e49e0a821e567645ac98eb87a3acd23a82a33314bc393"
+  },
+  "log_format": "UTF-8 with normalized line endings, terminal controls and trailing spaces removed; raw digests retained"
+}

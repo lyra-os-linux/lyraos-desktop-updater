@@ -515,6 +515,14 @@ mod tests {
         run(&["--detach-sign", document.to_str().unwrap()]);
         let signature = home.path().join("manifest.json.sig");
         super::verify_signature(&document, &signature, &keyring).unwrap();
+        // Staging must retain the exact authenticated document and binary
+        // signature, even when the producer omitted a final newline.
+        let staged_document = home.path().join("staged.json");
+        let staged_signature = home.path().join("staged.sig");
+        crate::executor::write_private(&staged_document, &signed_bytes).unwrap();
+        crate::executor::write_private(&staged_signature, &super::fs::read(&signature).unwrap())
+            .unwrap();
+        super::verify_signature(&staged_document, &staged_signature, &keyring).unwrap();
         let decoded: super::ReleaseManifest = serde_json::from_slice(&signed_bytes).unwrap();
         assert_eq!(
             decoded.allowed_vendor_transitions[0]

@@ -1,0 +1,8 @@
+[    0.052403][    T1] virt/tdx: TDX not supported by the host platform
+NEGATIVE_PASS: signature lyra-upgrade-offline: offline manifest authentication failed
+NEGATIVE_PASS: payload lyra-upgrade-offline: offline payload authentication failed: unexpected or altered RPM payload
+OFFLINE_PASS: authenticated cache, exact transaction, same identity and repositories
+MIGRATION_offline_EXIT=0
+Powering off.
+
+[    1.921364][  T362] reboot: Power down

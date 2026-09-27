@@ -289,11 +289,13 @@ pub fn build_plan(
     if !report.passed() {
         return Err(PlanError::Blocked(report.blockers.clone()));
     }
-    if matches!(operation, OperationKind::ReleaseUpgrade) {
+    if operation.is_signed_offline() {
         let target_release = target.as_ref().ok_or(PlanError::TargetRequired)?;
         if target_release.edition != facts.release.edition
             || target_release.architecture != facts.release.architecture
-            || target_release.version == facts.release.version
+            || (operation == OperationKind::ReleaseUpgrade
+                && target_release.version == facts.release.version)
+            || (operation == OperationKind::PackageMigration && target_release != &facts.release)
         {
             return Err(PlanError::TargetNotAllowed);
         }
@@ -345,7 +347,7 @@ pub fn build_plan(
             changes.sort();
             changes
         },
-        reboot_required: solver.reboot_required,
+        reboot_required: solver.reboot_required || operation.is_signed_offline(),
     })
 }
 

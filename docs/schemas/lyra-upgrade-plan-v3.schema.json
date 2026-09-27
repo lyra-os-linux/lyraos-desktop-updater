@@ -25,7 +25,8 @@
     "operation": {
       "enum": [
         "UpdateWithinRelease",
-        "ReleaseUpgrade"
+        "ReleaseUpgrade",
+        "PackageMigration"
       ]
     },
     "source": {

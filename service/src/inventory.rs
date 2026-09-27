@@ -51,7 +51,10 @@ pub fn verify_result(
         }
     }
     let actual: BTreeSet<_> = report.installed_packages.iter().cloned().collect();
-    if !required.is_subset(&actual) || !actual.is_subset(&allowed) {
+    if (plan.operation == lyra_upgrade_core::OperationKind::PackageMigration && actual != required)
+        || !required.is_subset(&actual)
+        || !actual.is_subset(&allowed)
+    {
         return Err(io::Error::other(
             "installed packages differ from confirmed plan",
         ));

@@ -1,6 +1,6 @@
 # Máquina de estados do Lyra Upgrade
 
-Esta máquina é normativa para update e release-upgrade. Estados persistidos
+Esta máquina é normativa para update, release-upgrade e `PackageMigration`. Estados persistidos
 usam os nomes abaixo e transições de execução mantêm sequência monotônica. A reconciliação de boot
 persiste o estado/causa e registra o diagnóstico no journal.
 
@@ -20,8 +20,11 @@ Estados de desvio: Blocked, Failed e NeedsRecovery.
 ```
 
 Para update sem necessidade de reboot, `Applying` pode seguir diretamente para
-`Completed` após verificação local. Release-upgrade sempre passa por
+`Completed` após verificação local. Release-upgrade e migração de pacotes sempre passam por
 `ReadyToReboot`, `ApplyingOffline`, `AwaitingReboot` e `VerifyingBoot`.
+`PackageMigration` conserva a identidade completa de origem/destino e não
+aceita `Applying` online. A transição para `ReadyToReboot` ou `ApplyingOffline`
+exige o número do snapshot persistido, assim como a aplicação online.
 
 | Estado | Escrita | Cancelável | Saídas normais |
 |---|---:|---:|---|

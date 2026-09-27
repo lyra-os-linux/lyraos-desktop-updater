@@ -120,6 +120,9 @@ impl Service {
         };
         fetch_release_manifest(&identity, sequence, channel).map_err(|error| match error {
             lyra_upgrade_service::manifest_fetch::FetchError::Route(
+                lyra_upgrade_core::ManifestError::MigrationAlreadyApplied,
+            ) => "MIGRATION_ALREADY_APPLIED",
+            lyra_upgrade_service::manifest_fetch::FetchError::Route(
                 lyra_upgrade_core::ManifestError::NotAvailable
                 | lyra_upgrade_core::ManifestError::SourceMismatch,
             ) => "RELEASE_NOT_AVAILABLE",
@@ -166,6 +169,9 @@ impl Service {
                         manifest: Box::new(verified.manifest),
                         cached,
                     },
+                    Err(lyra_upgrade_service::manifest_fetch::FetchError::Route(
+                        lyra_upgrade_core::ManifestError::MigrationAlreadyApplied,
+                    )) => rejected(request_id, "MIGRATION_ALREADY_APPLIED"),
                     Err(lyra_upgrade_service::manifest_fetch::FetchError::Route(
                         lyra_upgrade_core::ManifestError::NotAvailable
                         | lyra_upgrade_core::ManifestError::SourceMismatch,
@@ -216,6 +222,12 @@ impl Service {
                     blockers,
                 }
             }
+            Err(lyra_upgrade_service::planner::PlannerError::Migration(
+                lyra_upgrade_core::migration::MigrationError::AlreadyApplied,
+            )) => rejected(request_id, "MIGRATION_ALREADY_APPLIED"),
+            Err(lyra_upgrade_service::planner::PlannerError::Migration(_)) => {
+                rejected(request_id, "MIGRATION_POLICY_FAILED")
+            }
             Err(_) => rejected(request_id, "PREFLIGHT_BLOCKED"),
         }
     }
@@ -245,6 +257,12 @@ impl Service {
                     blockers,
                 }
             }
+            Err(lyra_upgrade_service::planner::PlannerError::Migration(
+                lyra_upgrade_core::migration::MigrationError::AlreadyApplied,
+            )) => rejected(request_id, "MIGRATION_ALREADY_APPLIED"),
+            Err(lyra_upgrade_service::planner::PlannerError::Migration(_)) => {
+                rejected(request_id, "MIGRATION_POLICY_FAILED")
+            }
             Err(_) => rejected(request_id, "PREFLIGHT_BLOCKED"),
         }
     }
@@ -263,10 +281,10 @@ impl Service {
         let operation_shape_valid = valid_operation_shape(
             submitted.plan.operation,
             submitted.manifest.is_some(),
-            submitted
-                .manifest
-                .as_ref()
-                .is_some_and(|manifest| submitted.plan.target.as_ref() == Some(&manifest.target)),
+            submitted.manifest.as_ref().is_some_and(|manifest| {
+                submitted.plan.target.as_ref() == Some(&manifest.target)
+                    && submitted.plan.operation == manifest.operation()
+            }),
             submitted.plan.target.is_some(),
             submitted.plan.manifest_sha256.is_some(),
         );
@@ -275,7 +293,8 @@ impl Service {
             || !operation_shape_valid
             || submitted.facts.release != submitted.plan.source
             || submitted.solver.changes != submitted.plan.package_changes
-            || submitted.solver.reboot_required != submitted.plan.reboot_required
+            || (submitted.solver.reboot_required || submitted.plan.operation.is_signed_offline())
+                != submitted.plan.reboot_required
         {
             return rejected(request_id, "PLAN_HASH_MISMATCH");
         }
@@ -286,7 +305,7 @@ impl Service {
             }
             let authoritative = match submitted.plan.operation {
                 OperationKind::UpdateWithinRelease => plan_update_with_cached_metadata(),
-                OperationKind::ReleaseUpgrade => {
+                OperationKind::ReleaseUpgrade | OperationKind::PackageMigration => {
                     let manifest = match self.release_manifest() {
                         Ok(manifest) => manifest,
                         Err(error) => return rejected(request_id, error),
@@ -382,17 +401,19 @@ impl Service {
                 OperationKind::UpdateWithinRelease => {
                     execute_update(&state_root, &mut state, &planned.planned, &observer).map(|_| ())
                 }
-                OperationKind::ReleaseUpgrade => match planned.manifest.as_ref() {
-                    Some(manifest) => stage_release_upgrade(
-                        &state_root,
-                        &mut state,
-                        &planned.planned,
-                        manifest,
-                        &observer,
-                    )
-                    .map(|_| ()),
-                    None => Err(lyra_upgrade_service::executor::ExecutionError::PlanChanged),
-                },
+                OperationKind::ReleaseUpgrade | OperationKind::PackageMigration => {
+                    match planned.manifest.as_ref() {
+                        Some(manifest) => stage_release_upgrade(
+                            &state_root,
+                            &mut state,
+                            &planned.planned,
+                            manifest,
+                            &observer,
+                        )
+                        .map(|_| ()),
+                        None => Err(lyra_upgrade_service::executor::ExecutionError::PlanChanged),
+                    }
+                }
             };
             if let Err(error) = execution {
                 if load_state(&state_root, &state.operation_id)
@@ -593,7 +614,7 @@ fn valid_operation_shape(
 ) -> bool {
     match operation {
         OperationKind::UpdateWithinRelease => !has_manifest && !has_target && !has_manifest_sha256,
-        OperationKind::ReleaseUpgrade => {
+        OperationKind::ReleaseUpgrade | OperationKind::PackageMigration => {
             has_manifest && target_matches_manifest && has_target && has_manifest_sha256
         }
     }

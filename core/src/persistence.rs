@@ -118,6 +118,9 @@ fn validate_state(state: &OperationStateRecord) -> Result<(), PersistenceError> 
             state.target.is_none() && state.manifest_sha256.is_none()
         }
         OperationKind::ReleaseUpgrade => state.target.is_some() && state.manifest_sha256.is_some(),
+        OperationKind::PackageMigration => {
+            state.target.as_ref() == Some(&state.source) && state.manifest_sha256.is_some()
+        }
     };
     operation_shape_is_valid
         .then_some(())
@@ -281,6 +284,24 @@ mod tests {
             created_at: "2026-08-18T00:00:00Z".into(),
             updated_at: "2026-08-18T00:00:00Z".into(),
         }
+    }
+
+    #[test]
+    fn migration_state_requires_same_identity_and_manifest() {
+        let root = temporary_root("migration");
+        let mut value = state();
+        value.operation = OperationKind::PackageMigration;
+        value.target = Some(value.source.clone());
+        assert!(save_state(&root, &value).is_err());
+        value.manifest_sha256 = Some("a".repeat(64));
+        save_state(&root, &value).unwrap();
+        assert_eq!(
+            load_state(&root, &value.operation_id).unwrap().operation,
+            OperationKind::PackageMigration
+        );
+        value.target.as_mut().unwrap().build_id = "other".into();
+        assert!(save_state(&root, &value).is_err());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

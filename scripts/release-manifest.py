@@ -102,7 +102,8 @@ def legacy_source(value: str) -> bool:
 
 
 def validate(document: object) -> dict:
-    manifest = require_exact_fields(document, FIELDS, "manifest")
+    fields = FIELDS | ({"package_migration"} if isinstance(document, dict) and "package_migration" in document else set())
+    manifest = require_exact_fields(document, fields, "manifest")
     if manifest["schema_version"] != 1:
         raise ManifestError("unsupported schema_version")
     if isinstance(manifest["sequence"], bool) or not isinstance(manifest["sequence"], int) or manifest["sequence"] < 1:
@@ -115,12 +116,13 @@ def validate(document: object) -> dict:
         raise ManifestError("valid_until must be later than valid_from")
     source = validate_identity(manifest["source"], "source")
     target = validate_identity(manifest["target"], "target")
-    if source == target:
+    migration = "package_migration" in manifest
+    if not migration and source == target:
         raise ManifestError("source and target must differ")
-    if legacy_source(target["version"]) or (
+    if not migration and (legacy_source(target["version"]) or (
         not legacy_source(source["version"])
         and version_base(target["version"]) <= version_base(source["version"])
-    ):
+    )):
         raise ManifestError("target version must be newer than source version")
     if not isinstance(manifest["minimum_updater_version"], str) or not UPDATER_VERSION.fullmatch(manifest["minimum_updater_version"]):
         raise ManifestError("minimum_updater_version is invalid")
@@ -190,7 +192,44 @@ def validate(document: object) -> dict:
             raise ManifestError("lockstep groups require at least two unique packages")
         if any(not isinstance(name, str) or not PACKAGE.fullmatch(name) for name in group):
             raise ManifestError("lockstep group contains an invalid package")
+    if migration:
+        validate_package_migration(manifest)
     return manifest
+
+
+def validate_package_migration(manifest: dict) -> None:
+    packages = manifest["package_migration"]
+    if (not isinstance(packages, list) or not 1 <= len(packages) <= 64
+        or manifest["source"] != manifest["target"]
+        or version_base(manifest["minimum_updater_version"]) < (0, 2, 7)
+        or manifest["allowed_removals"] or manifest["lockstep_packages"]):
+        raise ManifestError("package migration requires unchanged identity, updater 0.2.7 and an exact nonempty policy")
+    fields = {"name", "architecture", "from_version", "from_vendor", "to_version", "to_vendor", "repository_alias", "sha256", "if_installed"}
+    aliases = {r["alias"] for r in manifest["repositories"]}
+    names = set()
+    for p in packages:
+        require_exact_fields(p, fields, "package_migration entry")
+        if (not isinstance(p["name"], str) or not PACKAGE.fullmatch(p["name"]) or p["name"] in names
+            or p["architecture"] not in ("x86_64", "noarch") or not isinstance(p["if_installed"], bool)
+            or not isinstance(p["repository_alias"], str) or p["repository_alias"] not in aliases
+            or p["repository_alias"] != packages[0]["repository_alias"]
+            or not isinstance(p["sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", p["sha256"])):
+            raise ManifestError("invalid or duplicate package migration identity")
+        names.add(p["name"])
+        for key in ("from_version", "to_version"):
+            if not isinstance(p[key], str) or len(p[key]) > 256 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:+~^\-]*", p[key]):
+                raise ManifestError("invalid package migration version")
+        for key in ("from_vendor", "to_vendor"):
+            if (not isinstance(p[key], str) or not p[key].strip() or len(p[key].encode()) > 512
+                or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in p[key])):
+                raise ManifestError("invalid package migration vendor")
+        if p["from_version"] == p["to_version"]:
+            raise ManifestError("package migration requires a different RPM version; forced reinstalls are unsupported")
+    if all(p["if_installed"] for p in packages):
+        raise ManifestError("package migration requires at least one mandatory package")
+    for rule in manifest["allowed_vendor_transitions"]:
+        if "packages" not in rule or any(not any(p["name"] == name and p["from_vendor"] == rule["from"] and p["to_vendor"] == rule["to"] for p in packages) for name in rule["packages"]):
+            raise ManifestError("vendor grant exceeds package migration")
 
 
 def canonical_bytes(document: dict) -> bytes:
