@@ -1,4 +1,13 @@
 -------------------------------------------------------------------
+Sun Sep 27 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
+
+- Prepare 0.2.7: signed, exact package maintenance within the same release.
+- Reuse confirmation, offline staging, snapshot and recovery; preserve active
+  repositories and optional package absence. Reject unrelated changes and
+  changed payloads before application.
+- Preserve exact signed manifest bytes when persisting the offline operation.
+
+-------------------------------------------------------------------
 Sun Sep 27 12:30:00 UTC 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
 
 - Prepare 0.2.6: permit exact package scopes on signed vendor-transition rules.

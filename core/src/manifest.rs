@@ -20,6 +20,18 @@ pub struct ReleaseManifest {
     pub allowed_removals: Vec<String>,
     pub allowed_vendor_transitions: Vec<VendorTransitionWire>,
     pub lockstep_packages: Vec<Vec<String>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_migration"
+    )]
+    pub package_migration: Option<Vec<crate::migration::PackageMigration>>,
+}
+
+fn deserialize_migration<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Vec<crate::migration::PackageMigration>>, D::Error> {
+    Vec::<crate::migration::PackageMigration>::deserialize(deserializer).map(Some)
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -69,6 +81,14 @@ where
 }
 
 impl ReleaseManifest {
+    pub fn operation(&self) -> crate::OperationKind {
+        if self.package_migration.is_some() {
+            crate::OperationKind::PackageMigration
+        } else {
+            crate::OperationKind::ReleaseUpgrade
+        }
+    }
+
     pub fn solver_policy(&self) -> SolverPolicy {
         SolverPolicy {
             allowed_removals: self.allowed_removals.clone(),
@@ -95,6 +115,7 @@ pub enum ManifestError {
     TargetNotNewer,
     UnsupportedTarget,
     Replay,
+    MigrationAlreadyApplied,
     InvalidMinimumUpdaterVersion,
     UpdaterTooOld,
     InvalidRepository,
@@ -133,11 +154,21 @@ pub fn validate_manifest_route(
     {
         return Err(ManifestError::UnsupportedTarget);
     }
-    if !valid_version_transition(&installed.version, &manifest.target.version) {
+    if manifest.package_migration.is_some() {
+        crate::migration::validate_migration(manifest).map_err(|_| ManifestError::InvalidPolicy)?;
+    } else if !valid_version_transition(&installed.version, &manifest.target.version) {
         return Err(ManifestError::TargetNotNewer);
     }
     if is_prerelease(&manifest.target.version) && channel != ManifestChannelPolicy::Testing {
         return Err(ManifestError::PrereleaseNotAllowed);
+    }
+    if manifest.sequence > 0
+        && manifest.package_migration.is_some()
+        && last_sequence == Some(manifest.sequence)
+    {
+        // This offer remains on the same source identity after successful boot.
+        // Refuse execution while allowing clients to explain the consumed offer.
+        return Err(ManifestError::MigrationAlreadyApplied);
     }
     if manifest.sequence == 0 || last_sequence.is_some_and(|sequence| manifest.sequence <= sequence)
     {
@@ -149,6 +180,9 @@ pub fn validate_manifest_route(
         semantic_version(updater_version).ok_or(ManifestError::InvalidMinimumUpdaterVersion)?;
     if current_updater < minimum_updater {
         return Err(ManifestError::UpdaterTooOld);
+    }
+    if manifest.package_migration.is_some() && minimum_updater < (0, 2, 7) {
+        return Err(ManifestError::InvalidMinimumUpdaterVersion);
     }
     if manifest
         .allowed_vendor_transitions
@@ -351,6 +385,7 @@ mod tests {
             allowed_removals: vec![],
             allowed_vendor_transitions: vec![],
             lockstep_packages: vec![vec!["lyra-release".into(), "lyra-upgrade".into()]],
+            package_migration: None,
         }
     }
 

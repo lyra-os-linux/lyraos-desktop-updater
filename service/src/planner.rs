@@ -13,6 +13,7 @@ use crate::vendor_metadata::{VendorMetadataError, enrich_solver_vendors_at};
 #[derive(Debug)]
 pub enum PlannerError {
     PlanChanged,
+    Migration(lyra_upgrade_core::migration::MigrationError),
     Discovery(lyra_upgrade_core::DiscoverError),
     Spawn(std::io::Error),
     SolverExit { code: Option<i32>, stderr: String },
@@ -124,20 +125,17 @@ pub fn plan_release_upgrade(manifest: &ReleaseManifest) -> Result<PlannedUpdate,
             stderr: String::from_utf8_lossy(&refresh.stderr).into_owned(),
         });
     }
-    let dry_run = run_with_simulation(
-        context,
-        &[
-            "--xmlout",
-            "--no-refresh",
-            "dist-upgrade",
-            "--dry-run",
-            "--details",
-            "--no-allow-downgrade",
-            "--no-allow-name-change",
-            "--no-allow-arch-change",
-            "--allow-vendor-change",
-        ],
-    )?;
+    let installed = crate::vendor_metadata::installed_packages(Some(&simulation.root))
+        .map_err(PlannerError::VendorMetadata)?;
+    let arguments = crate::migration::transaction_arguments(
+        manifest,
+        &installed,
+        crate::migration::TransactionMode::Plan,
+    )
+    .map_err(PlannerError::Migration)?;
+    let mut args = vec!["--xmlout", "--no-refresh"];
+    args.extend(arguments.iter().map(String::as_str));
+    let dry_run = run_with_simulation(context, &args)?;
     if !dry_run.status.success() {
         return Err(PlannerError::SolverExit {
             code: dry_run.status.code(),
@@ -157,6 +155,12 @@ pub fn plan_release_upgrade(manifest: &ReleaseManifest) -> Result<PlannedUpdate,
         .map_err(PlannerError::SolverXml)?;
     enrich_solver_vendors_at(&mut solver, raw_dir, Some(&simulation.root))
         .map_err(PlannerError::VendorMetadata)?;
+    lyra_upgrade_core::migration::validate_migration_plan(
+        manifest,
+        &facts.installed_packages,
+        &solver.changes,
+    )
+    .map_err(PlannerError::Migration)?;
     let preflight = evaluate_solver_preflight(
         &facts,
         PreflightPolicy {
@@ -172,7 +176,7 @@ pub fn plan_release_upgrade(manifest: &ReleaseManifest) -> Result<PlannedUpdate,
     let canonical_manifest = serde_json::to_vec(manifest).map_err(PlannerError::Serialize)?;
     let manifest_sha256 = format!("{:x}", Sha256::digest(canonical_manifest));
     let plan = build_plan(
-        OperationKind::ReleaseUpgrade,
+        manifest.operation(),
         &facts,
         &preflight,
         Some(manifest.target.clone()),
@@ -211,13 +215,20 @@ pub fn check_confirmed_release_plan(
         "{:x}",
         Sha256::digest(serde_json::to_vec(manifest).map_err(PlannerError::Serialize)?)
     );
-    if confirmed.operation != OperationKind::ReleaseUpgrade
+    if confirmed.operation != manifest.operation()
+        || confirmed.source != manifest.source
         || confirmed.target.as_ref() != Some(&manifest.target)
         || confirmed.manifest_sha256.as_deref() != Some(manifest_hash.as_str())
         || confirmed.sha256().map_err(PlannerError::Serialize)? != expected_hash
     {
         return Err(PlannerError::PlanChanged);
     }
+    lyra_upgrade_core::migration::validate_migration_plan(
+        manifest,
+        &confirmed.installed_packages,
+        &confirmed.package_changes,
+    )
+    .map_err(PlannerError::Migration)?;
     let blockers = lyra_upgrade_core::vendor_policy_blockers(
         &confirmed.package_changes,
         &manifest.solver_policy(),
@@ -236,6 +247,12 @@ pub fn revalidate_release_plan(
     expected_hash: &str,
 ) -> Result<(), PlannerError> {
     check_confirmed_release_plan(manifest, confirmed, expected_hash)?;
+    lyra_upgrade_core::migration::validate_migration_plan(
+        manifest,
+        &facts.installed_packages,
+        &solver.changes,
+    )
+    .map_err(PlannerError::Migration)?;
     let report = evaluate_solver_preflight(
         facts,
         PreflightPolicy {
@@ -249,7 +266,7 @@ pub fn revalidate_release_plan(
         return Err(PlannerError::Blocked(report.blockers));
     }
     let mut rebuilt = build_plan(
-        OperationKind::ReleaseUpgrade,
+        manifest.operation(),
         facts,
         &report,
         Some(manifest.target.clone()),

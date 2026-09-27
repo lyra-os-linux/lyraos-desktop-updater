@@ -206,9 +206,7 @@ fn finalize_verification(
 ) {
     state.sequence = state.sequence.saturating_add(1);
     if passed {
-        if state.recovery.is_none()
-            && state.operation == lyra_upgrade_core::OperationKind::ReleaseUpgrade
-        {
+        if state.recovery.is_none() && state.operation.is_signed_offline() {
             let persisted = read_manifest_sequence(operation_dir)
                 .ok_or(())
                 .and_then(|sequence| write_sequence(sequence_path, sequence).map_err(|_| ()));
@@ -551,6 +549,47 @@ mod tests {
         std::os::unix::fs::symlink(&target, root.join("manifest.json")).unwrap();
         assert_eq!(read_manifest_sequence(&root), None);
 
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn migration_advances_sequence_only_after_successful_boot_and_never_on_rollback() {
+        let root =
+            std::env::temp_dir().join(format!("lyra-migration-verifier-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let sequence = root.join("sequence");
+        fs::write(root.join("manifest.json"), br#"{"sequence":8}"#).unwrap();
+        for (passed, rollback, expected) in [
+            (false, false, "7\n"),
+            (true, true, "7\n"),
+            (true, false, "8\n"),
+        ] {
+            fs::write(&sequence, "7\n").unwrap();
+            let mut value = if rollback {
+                recovered_state()
+            } else {
+                state(OperationKind::PackageMigration)
+            };
+            value.operation = OperationKind::PackageMigration;
+            value.target = Some(value.source.clone());
+            finalize_verification(&mut value, &root, &sequence, passed);
+            assert_eq!(fs::read_to_string(&sequence).unwrap(), expected);
+            assert_eq!(
+                value.state,
+                if passed {
+                    OperationState::Completed
+                } else {
+                    OperationState::NeedsRecovery
+                }
+            );
+        }
+        let mut value = state(OperationKind::PackageMigration);
+        fs::write(root.join("sequence.tmp"), b"stale").unwrap();
+        finalize_verification(&mut value, &root, &sequence, true);
+        assert_eq!(
+            value.error_code.as_deref(),
+            Some("MANIFEST_SEQUENCE_PERSIST_FAILED")
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

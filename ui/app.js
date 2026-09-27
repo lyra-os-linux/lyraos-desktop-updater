@@ -43,6 +43,7 @@ function renderDetails(){
   document.querySelector("#console").textContent=visible.filter(e=>e.technical).map(e=>e.technical.text+(e.technical.truncated?" …":"")).join("\n");
 }
 function escapeHtml(value){const node=document.createElement("span");node.textContent=value;return node.innerHTML;}
+function signedOperation(plan){return ["ReleaseUpgrade","PackageMigration"].includes(plan?.operation);}
 function showPlan(response) {
   if(response.kind==="PreflightBlocked"){
     const descriptions=response.blockers.map(blocker=>{
@@ -55,15 +56,15 @@ function showPlan(response) {
   if(response.kind!=="Plan") throw new Error(response.error_code||"PREFLIGHT_BLOCKED");
   state.operationId=response.operation_id; state.planHash=response.plan_sha256; state.planned=response.planned;
   state.reviewedPlan=response.plan;
-  const plan=response.plan, release=plan.operation==="ReleaseUpgrade";
+  const plan=response.plan, release=signedOperation(plan), migration=plan.operation==="PackageMigration";
   document.querySelector("#plan-summary").hidden=false;
-  document.querySelector("#plan-summary").textContent=`${plan.source.version}${plan.target?` → ${plan.target.version}`:""} · ${plan.package_changes.length} ${t("packages")} · ${t("space")}: ${formatBytes(plan.required_bytes)} · ${plan.reboot_required?t("reboot_yes"):t("reboot_no")}`;
+  document.querySelector("#plan-summary").textContent=`${plan.source.version}${migration?` · ${t("package_migration")}`:plan.target?` → ${plan.target.version}`:""} · ${plan.package_changes.length} ${t("packages")} · ${t("space")}: ${formatBytes(plan.required_bytes)} · ${plan.reboot_required?t("reboot_yes"):t("reboot_no")}`;
   document.querySelector("#plan-review").hidden=false;
   document.querySelector("#backup-confirmation").hidden=!release;
   document.querySelector("#backup-ack").checked=false;
   document.querySelector("#confirm").disabled=release;
   document.querySelector("#package-plan").innerHTML=plan.package_changes.map(p=>`<p><strong>${escapeHtml(p.name)}</strong> (${escapeHtml(p.architecture)}) · ${escapeHtml(t(`action_${p.action}`))}<br>${escapeHtml(p.current_version||"—")} → ${escapeHtml(p.proposed_version||"—")}<br>${escapeHtml(p.current_vendor||"—")} → ${escapeHtml(p.proposed_vendor||"—")}</p>`).join("")||escapeHtml(t("no_package_changes"));
-  document.querySelector("#repository-plan").textContent=plan.repositories.map(r=>r.alias).join(" · ")+(release?`\n${t("third_party_disabled")}`:"");
+  document.querySelector("#repository-plan").textContent=plan.repositories.map(r=>r.alias).join(" · ")+(migration?`\n${t("repositories_preserved")}`:release?`\n${t("third_party_disabled")}`:"");
   document.querySelector("#confirm").hidden=false;
   document.querySelector("#check").hidden=true;
   document.querySelector("#plan-release").hidden=true;
@@ -79,7 +80,8 @@ async function checkRelease(){
     const response=await request("CheckRelease");
     if(response.kind!=="ReleaseOffer")throw new Error(response.error_code||"MANIFEST_INVALID");
     state.releaseOffer=response;
-    status.textContent=`${t("release_available")}: ${response.manifest.target.version} (${response.manifest.target.build_id})${response.cached?` · ${t("release_cached")}`:""}`;
+    status.textContent=`${t(response.manifest.package_migration?"migration_available":"release_available")}: ${response.manifest.target.version} (${response.manifest.target.build_id})${response.cached?` · ${t("release_cached")}`:""}`;
+    document.querySelector("#plan-release").textContent=t(response.manifest.package_migration?"plan_migration":"plan_release");
     document.querySelector("#plan-release").hidden=false;
     document.querySelector("#plan-release").disabled=response.cached===true;
   } catch(error) { status.textContent=errorMessage(error); }
@@ -95,12 +97,12 @@ async function confirmUpdate(){
   const button=document.querySelector("#confirm");button.disabled=true;setError("");
   try{
     if(!state.planned)throw new Error("PLAN_NOT_AVAILABLE");
-    if(state.planned.plan.operation==="ReleaseUpgrade"&&!document.querySelector("#backup-ack").checked)throw new Error("BACKUP_ACK_REQUIRED");
+    if(signedOperation(state.planned.plan)&&!document.querySelector("#backup-ack").checked)throw new Error("BACKUP_ACK_REQUIRED");
     const response=await request("Start",{operation_id:state.operationId,plan_sha256:state.planHash,confirmed:true,planned:state.planned});
     if(response.kind!=="Accepted")throw new Error(response.error_code||"INVALID_RESPONSE");
     button.hidden=true;state.planned=null;rememberOperation();startPolling();
   }catch(error){setError(errorMessage(error));document.querySelector("#check").hidden=false;}
-  finally{button.disabled=state.planned?.plan.operation==="ReleaseUpgrade"&&!document.querySelector("#backup-ack").checked;}
+  finally{button.disabled=signedOperation(state.planned?.plan)&&!document.querySelector("#backup-ack").checked;}
 }
 async function poll(){
   if(!state.operationId||state.polling)return;

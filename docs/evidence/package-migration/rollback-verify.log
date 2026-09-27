@@ -1,0 +1,8 @@
+[    0.055628][    T1] virt/tdx: TDX not supported by the host platform
+[    1.177370][    T1] systemd[1]: Failed to initialize kmod context: Operation not supported
+RPC AcknowledgeRecovery Status None
+RECOVERY_SCHEDULED: {"source_snapshot_number": 1, "source_snapshot": {"id": 260, "uuid": "47210049-c188-5f44-a8aa-d527b0e54fd6", "parent_uuid": "536b967c-6081-944c-b712-f012e33b64b0"}, "boot_snapshot": {"id": 262, "uuid": "83b70cd9-9418-f74b-9bbf-62bf2a0bf670", "parent_uuid": "47210049-c188-5f44-a8aa-d527b0e54fd6"}}
+MIGRATION_verify_EXIT=0
+Powering off.
+
+[    1.805790][  T278] reboot: Power down

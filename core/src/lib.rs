@@ -5,6 +5,7 @@
 
 mod discovery;
 mod manifest;
+pub mod migration;
 mod persistence;
 mod preflight;
 pub use preflight::StorageFacts;
@@ -38,6 +39,13 @@ pub const STATE_SCHEMA_VERSION: u32 = 1;
 pub enum OperationKind {
     UpdateWithinRelease,
     ReleaseUpgrade,
+    PackageMigration,
+}
+
+impl OperationKind {
+    pub const fn is_signed_offline(self) -> bool {
+        matches!(self, Self::ReleaseUpgrade | Self::PackageMigration)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -146,7 +154,13 @@ impl OperationStateRecord {
         if self.schema_version != STATE_SCHEMA_VERSION {
             return Err(TransitionError::UnsupportedSchema);
         }
-        if next == OperationState::Applying && self.snapshot_number.is_none() {
+        if matches!(
+            next,
+            OperationState::Applying
+                | OperationState::ReadyToReboot
+                | OperationState::ApplyingOffline
+        ) && self.snapshot_number.is_none()
+        {
             return Err(TransitionError::SnapshotNotRecorded);
         }
         if !valid_transition(self.operation, self.state, next) {
@@ -193,7 +207,7 @@ pub const fn valid_transition(
         (Snapshotting, Applying) => matches!(operation, OperationKind::UpdateWithinRelease),
         (Snapshotting, ReadyToReboot)
         | (ReadyToReboot, ApplyingOffline)
-        | (ApplyingOffline, AwaitingReboot) => matches!(operation, OperationKind::ReleaseUpgrade),
+        | (ApplyingOffline, AwaitingReboot) => operation.is_signed_offline(),
         _ => false,
     }
 }
@@ -254,6 +268,33 @@ mod tests {
             OperationState::Snapshotting,
             OperationState::ReadyToReboot
         ));
+    }
+
+    #[test]
+    fn package_migration_requires_snapshot_and_offline_apply() {
+        let mut state = record(
+            OperationKind::PackageMigration,
+            OperationState::Snapshotting,
+        );
+        assert_eq!(
+            state.transition_to(OperationState::ReadyToReboot),
+            Err(TransitionError::SnapshotNotRecorded)
+        );
+        state.snapshot_number = Some(42);
+        assert!(!valid_transition(
+            state.operation,
+            state.state,
+            OperationState::Applying
+        ));
+        for next in [
+            OperationState::ReadyToReboot,
+            OperationState::ApplyingOffline,
+            OperationState::AwaitingReboot,
+            OperationState::VerifyingBoot,
+            OperationState::Completed,
+        ] {
+            state.transition_to(next).unwrap();
+        }
     }
 
     #[test]

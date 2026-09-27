@@ -1,0 +1,7 @@
+[    0.050927][    T1] virt/tdx: TDX not supported by the host platform
+[    1.122412][    T1] systemd[1]: Failed to initialize kmod context: Operation not supported
+VERIFIED_PASS: {"rollback": true, "state": "Completed", "identity": "1-1|Lyra Fixture A", "sequence": "7"}
+MIGRATION_rollback_EXIT=0
+Powering off.
+
+[    1.602809][  T275] reboot: Power down

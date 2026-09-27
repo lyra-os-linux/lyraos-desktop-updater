@@ -135,7 +135,7 @@ pub fn stage_release_upgrade(
     observer: &impl ExecutionObserver,
 ) -> Result<ExecutionOutcome, ExecutionError> {
     let _transaction_lock = TransactionLock::acquire()?;
-    if state.operation != lyra_upgrade_core::OperationKind::ReleaseUpgrade
+    if state.operation != manifest.operation()
         || confirmed.plan.target.as_ref() != Some(&manifest.target)
         || confirmed.plan.manifest_sha256.as_ref() != state.manifest_sha256.as_ref()
     {
@@ -224,17 +224,14 @@ pub fn stage_release_upgrade(
         return Err(ExecutionError::Cancelled);
     }
     let mut dry_run_args = common.to_vec();
-    dry_run_args.extend([
-        "--xmlout",
-        "--no-refresh",
-        "dist-upgrade",
-        "--dry-run",
-        "--details",
-        "--no-allow-downgrade",
-        "--no-allow-name-change",
-        "--no-allow-arch-change",
-        "--allow-vendor-change",
-    ]);
+    let dry_run_args_owned = crate::migration::transaction_arguments(
+        manifest,
+        &confirmed.plan.installed_packages,
+        crate::migration::TransactionMode::Plan,
+    )
+    .map_err(|e| ExecutionError::Replan(PlannerError::Migration(e)))?;
+    dry_run_args.extend(["--xmlout", "--no-refresh"]);
+    dry_run_args.extend(dry_run_args_owned.iter().map(String::as_str));
     let dry_run = require_success("zypper", run_observed("zypper", &dry_run_args, observer))
         .map_err(ExecutionError::Download)?;
     revalidate_staged_solver(
@@ -248,17 +245,14 @@ pub fn stage_release_upgrade(
         return Err(ExecutionError::Cancelled);
     }
     let mut download_args = common.to_vec();
-    download_args.extend([
-        "--xmlout",
-        "--no-refresh",
-        "dist-upgrade",
-        "--download-only",
-        "--details",
-        "--no-allow-downgrade",
-        "--no-allow-name-change",
-        "--no-allow-arch-change",
-        "--allow-vendor-change",
-    ]);
+    let download_args_owned = crate::migration::transaction_arguments(
+        manifest,
+        &confirmed.plan.installed_packages,
+        crate::migration::TransactionMode::Download,
+    )
+    .map_err(|e| ExecutionError::Replan(PlannerError::Migration(e)))?;
+    download_args.extend(["--xmlout", "--no-refresh"]);
+    download_args.extend(download_args_owned.iter().map(String::as_str));
     let download = run_observed("zypper", &download_args, observer);
     let download = require_success("zypper", download).map_err(ExecutionError::Download)?;
     revalidate_staged_solver(
@@ -272,6 +266,8 @@ pub fn stage_release_upgrade(
         return Err(ExecutionError::Cancelled);
     }
 
+    crate::migration::verify_payloads(manifest, &confirmed.plan.installed_packages, packages_dir)
+        .map_err(ExecutionError::Stage)?;
     crate::manifest_fetch::validate_time(manifest).map_err(ExecutionError::RepositoryKey)?;
     state
         .transition_to(OperationState::Snapshotting)
@@ -306,7 +302,7 @@ pub fn stage_release_upgrade(
     })
 }
 
-fn write_private(path: &std::path::Path, content: &[u8]) -> Result<(), ExecutionError> {
+pub(crate) fn write_private(path: &std::path::Path, content: &[u8]) -> Result<(), ExecutionError> {
     use std::os::unix::fs::OpenOptionsExt;
     let temporary = path.with_extension("tmp");
     let mut file = fs::OpenOptions::new()
@@ -317,7 +313,6 @@ fn write_private(path: &std::path::Path, content: &[u8]) -> Result<(), Execution
         .open(&temporary)
         .map_err(ExecutionError::Stage)?;
     file.write_all(content).map_err(ExecutionError::Stage)?;
-    file.write_all(b"\n").map_err(ExecutionError::Stage)?;
     file.sync_all().map_err(ExecutionError::Stage)?;
     fs::rename(temporary, path).map_err(ExecutionError::Stage)?;
     fs::File::open(

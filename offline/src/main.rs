@@ -56,7 +56,10 @@ fn run(operation_dir: &Path) -> Result<(), String> {
     prepare_offline_state(&mut state)?;
     let manifest: ReleaseManifest = read_json(&operation_dir.join("manifest.json"))?;
     let confirmed_plan: UpgradePlan = read_json(&operation_dir.join("plan.json"))?;
-    if confirmed_plan.sha256().map_err(|_| "cannot hash plan")? != state.plan_sha256 {
+    if state.operation != manifest.operation()
+        || state.target.as_ref() != Some(&manifest.target)
+        || confirmed_plan.sha256().map_err(|_| "cannot hash plan")? != state.plan_sha256
+    {
         return Err("persisted plan hash mismatch".into());
     }
     let manifest_hash = format!(
@@ -92,34 +95,57 @@ fn run(operation_dir: &Path) -> Result<(), String> {
         &state.plan_sha256,
     )?;
 
+    lyra_upgrade_service::migration::verify_payloads(
+        &manifest,
+        &confirmed_plan.installed_packages,
+        &operation_dir.join("cache/packages"),
+    )
+    .map_err(|e| format!("offline payload authentication failed: {e}"))?;
+    let arguments = lyra_upgrade_service::migration::transaction_arguments(
+        &manifest,
+        &confirmed_plan.installed_packages,
+        lyra_upgrade_service::migration::TransactionMode::Apply,
+    )
+    .map_err(|e| format!("offline migration policy failed: {e:?}"))?;
     let output = release_command(
         operation_dir,
-        &[
-            "dist-upgrade",
-            "--details",
-            "--no-allow-downgrade",
-            "--no-allow-name-change",
-            "--no-allow-arch-change",
-            "--allow-vendor-change",
-        ],
+        &arguments.iter().map(String::as_str).collect::<Vec<_>>(),
     )?;
     if !matches!(output.status.code(), Some(0 | 102)) {
         return Err(format!(
-            "zypper dup failed: {}",
+            "zypper transaction failed: {}",
             String::from_utf8_lossy(&output.stderr)
         ));
     }
     // Solve/apply against the prepared context while keeping the old active
     // repository set available on every pre-application failure.
-    install_repository_set(&manifest, operation_id)?;
-    require_success(
-        command("dracut", &["--regenerate-all", "--force"]),
-        "dracut",
-    )?;
-    require_success(
-        command("grub2-mkconfig", &["-o", "/boot/grub2/grub.cfg"]),
-        "grub2-mkconfig",
-    )?;
+    if manifest.package_migration.is_none() {
+        install_repository_set(&manifest, operation_id)?;
+    }
+    let touches_boot = confirmed_plan.package_changes.iter().any(|p| {
+        p.name.starts_with("kernel-")
+            || matches!(
+                p.name.as_str(),
+                "dracut" | "shim" | "grub2" | "grub2-x86_64-efi"
+            )
+    });
+    if manifest.package_migration.is_none() || touches_boot {
+        require_success(
+            command("dracut", &["--regenerate-all", "--force"]),
+            "dracut",
+        )?;
+        require_success(
+            command("grub2-mkconfig", &["-o", "/boot/grub2/grub.cfg"]),
+            "grub2-mkconfig",
+        )?;
+    }
+    if manifest.package_migration.is_some() {
+        let report = lyra_upgrade_service::inventory::capture().map_err(|e| e.to_string())?;
+        lyra_upgrade_service::inventory::verify_result(&confirmed_plan, &report)
+            .map_err(|e| e.to_string())?;
+        lyra_upgrade_service::inventory::save(&operation_dir.join("inventory-after.json"), &report)
+            .map_err(|e| e.to_string())?;
+    }
 
     state
         .transition_to(OperationState::AwaitingReboot)
@@ -153,17 +179,15 @@ fn revalidate_plan(
 ) -> Result<(), String> {
     check_confirmed_release_plan(manifest, confirmed, expected_hash)
         .map_err(|error| format!("offline confirmed policy blocked: {error:?}"))?;
+    let arguments = lyra_upgrade_service::migration::transaction_arguments(
+        manifest,
+        &confirmed.installed_packages,
+        lyra_upgrade_service::migration::TransactionMode::Plan,
+    )
+    .map_err(|e| format!("offline migration policy failed: {e:?}"))?;
     let dry_run = release_command(
         operation_dir,
-        &[
-            "dist-upgrade",
-            "--dry-run",
-            "--details",
-            "--no-allow-downgrade",
-            "--no-allow-name-change",
-            "--no-allow-arch-change",
-            "--allow-vendor-change",
-        ],
+        &arguments.iter().map(String::as_str).collect::<Vec<_>>(),
     )?;
     if !dry_run.status.success() {
         return Err("offline dry-run failed".into());

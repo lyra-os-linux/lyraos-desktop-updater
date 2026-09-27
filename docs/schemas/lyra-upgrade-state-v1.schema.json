@@ -9,7 +9,7 @@
     "schema_version": {"const": 1},
     "operation_id": {"type": "string", "format": "uuid"},
     "sequence": {"type": "integer", "minimum": 0},
-    "operation": {"enum": ["UpdateWithinRelease", "ReleaseUpgrade"]},
+    "operation": {"enum": ["UpdateWithinRelease", "ReleaseUpgrade", "PackageMigration"]},
     "state": {
       "enum": ["Idle", "Checking", "Available", "Preflight", "Planned", "AwaitingConfirmation", "Downloading", "Snapshotting", "Applying", "ReadyToReboot", "ApplyingOffline", "AwaitingReboot", "VerifyingBoot", "Blocked", "Failed", "NeedsRecovery", "Completed"]
     },

@@ -1,0 +1,83 @@
+[    0.052744][    T1] virt/tdx: TDX not supported by the host platform
+btrfs-progs v6.14
+See https://btrfs.readthedocs.io for more information.
+
+Performing full device TRIM /dev/vda (12.00GiB) ...
+NOTE: several default settings have changed in version 5.15, please make sure
+      this does not affect your deployments:
+      - DUP for metadata (-m dup)
+      - enabled no-holes (-O no-holes)
+      - enabled free-space-tree (-R free-space-tree)
+
+Label:              (null)
+UUID:               21ca3fd6-bd66-4724-a09b-35b3a4c72e3b
+Node size:          16384
+Sector size:        4096	(CPU page size: 4096)
+Filesystem size:    12.00GiB
+Block group profiles:
+  Data:             single            8.00MiB
+  Metadata:         DUP             256.00MiB
+  System:           DUP               8.00MiB
+SSD detected:       no
+Zoned device:       no
+Features:           extref, skinny-metadata, no-holes, free-space-tree
+Checksum:           crc32c
+Number of devices:  1
+Devices:
+   ID        SIZE  PATH
+    1    12.00GiB  /dev/vda
+
+Create subvolume '/top/@'
+Create subvolume '/top/@var'
+Create subvolume '/top/@home'
+127.0.0.1 - - [27/Sep/2026 13:46:00] "GET /key.asc HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:00] "HEAD /repo/repodata/repomd.xml HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:00] code 404, message File not found
+127.0.0.1 - - [27/Sep/2026 13:46:00] "GET /repo/media.1/media HTTP/1.1" 404 -
+127.0.0.1 - - [27/Sep/2026 13:46:00] "GET /repo/repodata/repomd.xml HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:00] "GET /repo/repodata/repomd.xml.key HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:01] "GET /repo/repodata/repomd.xml.asc HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:01] "GET /repo/repodata/primary.xml.gz HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:01] "GET /releases-v1.json HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:01] "GET /releases-v1.json.asc HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:01] "GET /key.asc HTTP/1.1" 200 -
+RPC CheckRelease ReleaseOffer
+127.0.0.1 - - [27/Sep/2026 13:46:01] "GET /releases-v1.json HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:01] "GET /releases-v1.json.asc HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:01] "GET /key.asc HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:01] "GET /key.asc HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:01] "HEAD /repo/repodata/repomd.xml HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:01] code 404, message File not found
+127.0.0.1 - - [27/Sep/2026 13:46:01] "GET /repo/media.1/media HTTP/1.1" 404 -
+127.0.0.1 - - [27/Sep/2026 13:46:01] "GET /repo/repodata/repomd.xml HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:01] "GET /repo/repodata/repomd.xml.asc HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:01] "GET /repo/repodata/primary.xml.gz HTTP/1.1" 200 -
+RPC PlanReleaseUpgrade Plan
+RPC Start Rejected CONFIRMATION_REQUIRED
+127.0.0.1 - - [27/Sep/2026 13:46:01] "GET /releases-v1.json HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:01] "GET /releases-v1.json.asc HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:01] "GET /key.asc HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:01] "GET /key.asc HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:01] "HEAD /repo/repodata/repomd.xml HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:01] code 404, message File not found
+127.0.0.1 - - [27/Sep/2026 13:46:01] "GET /repo/media.1/media HTTP/1.1" 404 -
+127.0.0.1 - - [27/Sep/2026 13:46:01] "GET /repo/repodata/repomd.xml HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:02] "GET /repo/repodata/repomd.xml.asc HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:02] "GET /repo/repodata/primary.xml.gz HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:02] "GET /releases-v1.json HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:02] "GET /releases-v1.json.asc HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:02] "GET /key.asc HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:02] "GET /key.asc HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:02] "HEAD /repo/repodata/repomd.xml HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:02] code 404, message File not found
+127.0.0.1 - - [27/Sep/2026 13:46:02] "GET /repo/media.1/media HTTP/1.1" 404 -
+127.0.0.1 - - [27/Sep/2026 13:46:02] "GET /repo/repodata/repomd.xml HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:02] "GET /repo/repodata/repomd.xml.asc HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:02] "GET /repo/repodata/primary.xml.gz HTTP/1.1" 200 -
+127.0.0.1 - - [27/Sep/2026 13:46:03] "GET /repo/lyra-vendor-fixture-2-1.noarch.rpm HTTP/1.1" 200 -
+RPC Start Accepted
+ONLINE_PASS: HTTPS signed offer, confirmation, production staging and snapshot
+MIGRATION_online_EXIT=0
+Powering off.
+
+[    4.936706][ T1290] reboot: Power down
