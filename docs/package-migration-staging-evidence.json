@@ -1,0 +1,215 @@
+{
+  "schema": 1,
+  "date": "2026-09-27",
+  "source": {
+    "passed": true,
+    "project": "home:rodrigosbrito:lyra:staging",
+    "revision": "40",
+    "srcmd5": "69dca165aed45064db106ae96dc015fc",
+    "commit": "9ddc4000c5b8a051dba1bfa365b1c5db824cac0d",
+    "all_source_sha256_match": true,
+    "files": {
+      "build-source.txt": {
+        "sha256": "d99a14183b78a85c60e213032536dc8fbb0be6151a61004b74dbc35128ef2e1b",
+        "md5": "995b5b692925360487da167124d18a46",
+        "size": 155
+      },
+      "lyra-upgrade-0.2.3.tar.zst": {
+        "sha256": "14c57cb1d243ffba5d2b7726e199fdf9bb64338c19912e5cbe2d3989fd7e57b8",
+        "md5": "f6521e1f4f3a6136238474b9451872d9",
+        "size": 357303
+      },
+      "lyra-upgrade-0.2.4.tar.zst": {
+        "sha256": "f3f5a22f30d6ae093a188f2b00f720215079708726da55a2e5275b2d091d9205",
+        "md5": "08f2162bf7f11e641b8fc9fadb9e35d3",
+        "size": 385156
+      },
+      "lyra-upgrade-0.2.5.tar.zst": {
+        "sha256": "14aebb8ce0fd2873c768c56fe37540c5ca54d2292721366844899ec81d8cecfd",
+        "md5": "35c80a8ddbe2cd51aba8abe911c593a3",
+        "size": 387570
+      },
+      "lyra-upgrade-0.2.6.tar.zst": {
+        "sha256": "a6ed95ba8524bbdba8c4c299cb0a35e4c8b4d4afca4f0d364278c0bcf6ebe028",
+        "md5": "bd450298a57ef461dc0dc4203305dddd",
+        "size": 392969
+      },
+      "lyra-upgrade-0.2.7.tar.zst": {
+        "sha256": "215a79289a3a6789d583afbda8e53590540761f7d4809b22be7771fc7584c669",
+        "md5": "34e734c486eb5c936ac951e535beb6ce",
+        "size": 414229
+      },
+      "lyra-upgrade.changes": {
+        "sha256": "3da8b5ca384b22711057a57a24f1e7387a861a7f7613389208c90c57e8b9e1a6",
+        "md5": "6b401c09508a73e4e52438009420688f",
+        "size": 6789
+      },
+      "lyra-upgrade.spec": {
+        "sha256": "cfc009413ffa41ba3a20a8681a7617df4a84c9020a33e9aae4cc353cfef23322",
+        "md5": "aff8dd135bbb7c0d0f9c5476cf02ec35",
+        "size": 6668
+      },
+      "release-signing-key.gpg": {
+        "sha256": "f8bd374b5c218881cb731a706144d10ac5cb5b4e65f1d711f153b836788307fc",
+        "md5": "dfda34e0578a927f1a933b85f6411679",
+        "size": 2272
+      },
+      "vendor.tar.zst": {
+        "sha256": "fda8a156eacd169d9bab918e37ca3651c76998d40e1b2fd8162faadee4329666",
+        "md5": "4ede664c2b5b6a6786e31540a0d08653",
+        "size": 52745974
+      }
+    }
+  },
+  "artifact": {
+    "url": "https://download.opensuse.org/repositories/home:/rodrigosbrito:/lyra:/staging/openSUSE_Leap_16.1",
+    "metadata_signature": "verified",
+    "signing_fingerprint": "399218A6E088C4053F4533BE58097F767EDCA82E",
+    "packages": [
+      {
+        "filename": "lyra-upgrade-0.2.7-lp161.1.1.x86_64.rpm",
+        "name": "lyra-upgrade",
+        "version": "0.2.7-lp161.1.1",
+        "architecture": "x86_64",
+        "size": 3947336,
+        "sha256": "ce703c2adffd04c2a98d2430bc22663a1b3d838424f1820e465e443ed15114d6",
+        "url": "https://download.opensuse.org/repositories/home:/rodrigosbrito:/lyra:/staging/openSUSE_Leap_16.1/x86_64/lyra-upgrade-0.2.7-lp161.1.1.x86_64.rpm",
+        "signature": "verified"
+      }
+    ],
+    "passed": true,
+    "srcmd5": "69dca165aed45064db106ae96dc015fc",
+    "source_commit": "9ddc4000c5b8a051dba1bfa365b1c5db824cac0d",
+    "identity": [
+      "lyra-upgrade",
+      "0.2.7",
+      "lp161.1.1",
+      "obs://build.opensuse.org/home:rodrigosbrito:lyra:staging/openSUSE_Leap_16.1/69dca165aed45064db106ae96dc015fc-lyra-upgrade"
+    ],
+    "provenance": "commit=9ddc4000c5b8a051dba1bfa365b1c5db824cac0d\nsource_epoch=1790517407\ncargo_lock_sha256=ec59fd4367c3815595a13596659b55a0aa38d3929a0d3ca3155b4444fe916b55\n",
+    "units_match_git": true,
+    "release_key_unchanged": true,
+    "public_matches_build_api": true,
+    "offline_worker_sha256": "74ba4c9bf91f8fcd5a55bfc16913d5fea89428d196f2e6f624c8422b004ec4e9",
+    "binaries_sha256": {
+      "lyra-upgrade-service": "6e8a7707a7de9f7bcec35f248fe29a36d520ebcc9fa67f9ba5b4e0496081095d",
+      "lyra-upgrade-offline": "74ba4c9bf91f8fcd5a55bfc16913d5fea89428d196f2e6f624c8422b004ec4e9",
+      "lyra-upgrade-verify": "25d4edab8d63b4be431e832adbe9346ebb07aa8c814db1bf07c506ebcc7ed1c5"
+    }
+  },
+  "build": {
+    "passed": true,
+    "rust_tests": 145,
+    "log_sha256": "d3e7be7c06d87b924c58cba2d0532d48c2360e4d5ad4c5fb25c0a2a0aa94c6e1",
+    "rpmlint": [
+      "[  280s] lyra-upgrade.x86_64: W: unstripped-binary-or-object /usr/bin/lyra-upgrade",
+      "[  280s] lyra-upgrade.x86_64: W: unstripped-binary-or-object /usr/bin/lyra-upgrade-probe",
+      "[  280s] lyra-upgrade.x86_64: W: unstripped-binary-or-object /usr/bin/lyra-upgrade-ui",
+      "[  280s] lyra-upgrade.x86_64: W: unstripped-binary-or-object /usr/libexec/lyra-upgrade-offline",
+      "[  280s] lyra-upgrade.x86_64: W: unstripped-binary-or-object /usr/libexec/lyra-upgrade-service",
+      "[  280s] lyra-upgrade.x86_64: W: unstripped-binary-or-object /usr/libexec/lyra-upgrade-verify",
+      "[  280s] lyra-upgrade.x86_64: E: polkit-untracked-privilege (Badness: 10) org.lyraos.Upgrade.manage (auth_admin:auth_admin:auth_admin_keep)"
+    ]
+  },
+  "dependencies": {
+    "passed": true,
+    "same_file_contents_modes_links": true,
+    "entries": 28146,
+    "external_cargo_dependencies_unchanged": true,
+    "release_key_unchanged": true,
+    "note": "Archive bytes differ only due to normalized source commit timestamps."
+  },
+  "migration_vm": {
+    "success": {
+      "result": "PASS",
+      "scenario": "success",
+      "phases": [
+        "online",
+        "offline",
+        "verify"
+      ],
+      "binaries": {
+        "lyra-upgrade-offline": "74ba4c9bf91f8fcd5a55bfc16913d5fea89428d196f2e6f624c8422b004ec4e9",
+        "lyra-upgrade-service": "6e8a7707a7de9f7bcec35f248fe29a36d520ebcc9fa67f9ba5b4e0496081095d",
+        "lyra-upgrade-verify": "25d4edab8d63b4be431e832adbe9346ebb07aa8c814db1bf07c506ebcc7ed1c5"
+      },
+      "kernel": "vmlinuz-6.12.0-160100.5-default",
+      "limits": [
+        "Fixture packages and ephemeral manifest signing key",
+        "Authenticated UID fixture, not interactive Polkit",
+        "Secure Boot disabled fixture; no bootloader rebuild",
+        "Does not qualify portal RPM or ISO"
+      ],
+      "logs": {
+        "online.log": "741f4b7c2090b34046015ed89f04b0181fbdfee6fa89b6073567171911eb370c",
+        "offline.log": "15035ec1b9495f169e05789c910981a52ecdf876b0c88451436915eef827af91",
+        "verify.log": "e049b4fc1ca616de9b91d2d4ac12425f6403faaf86d087c78fca5bf39be80339"
+      }
+    },
+    "rollback": {
+      "result": "PASS",
+      "scenario": "rollback",
+      "phases": [
+        "online",
+        "offline",
+        "verify",
+        "rollback"
+      ],
+      "binaries": {
+        "lyra-upgrade-offline": "74ba4c9bf91f8fcd5a55bfc16913d5fea89428d196f2e6f624c8422b004ec4e9",
+        "lyra-upgrade-service": "6e8a7707a7de9f7bcec35f248fe29a36d520ebcc9fa67f9ba5b4e0496081095d",
+        "lyra-upgrade-verify": "25d4edab8d63b4be431e832adbe9346ebb07aa8c814db1bf07c506ebcc7ed1c5"
+      },
+      "kernel": "vmlinuz-6.12.0-160100.5-default",
+      "limits": [
+        "Fixture packages and ephemeral manifest signing key",
+        "Authenticated UID fixture, not interactive Polkit",
+        "Secure Boot disabled fixture; no bootloader rebuild",
+        "Does not qualify portal RPM or ISO"
+      ],
+      "logs": {
+        "online.log": "c70654c9b05460e31f20a64bd257324c52385254f2b6c685f82db58cf056c992",
+        "offline.log": "7e1b743df173f03aa249e57a247a15973dfeacfc270c9dc3bcd5686414d11ce6",
+        "verify.log": "1c681f7f66ce8de465af2c0dd2fd15725cf92df8c494b214dedd59f3aef2c3b2",
+        "rollback.log": "bd635093ec66f746c7f7074f4d33a5b8c0811a4f98fdd758a77b3a73edb94084"
+      }
+    }
+  },
+  "packagekit_vm": {
+    "passed": true,
+    "boots": 3,
+    "reboots": 2,
+    "logs": {
+      "prepare.log": "2b43ec2fca2c2bf17217f0a69df2a0fb427d3ecfd0405cffdbd8eb914d191b92",
+      "offline.log": "48b5c53ae2593a0d3e5a1ce892aa6970e02f54e0d4d2da4c34d56d4da1bf2220",
+      "verify.log": "7226f9c656c2186163de4f45d02b6c594278e040aac655bdb987079c0f0d2167"
+    },
+    "worker_sha256": "74ba4c9bf91f8fcd5a55bfc16913d5fea89428d196f2e6f624c8422b004ec4e9"
+  },
+  "harnesses": {
+    "scripts/check-package-migration-vm.py": "1ec90eae7b8925165e713ae53d526df7174b6c9f74c9bf9d9019b392b1d2cafb",
+    "tests/package_migration_vm.py": "3c179c24bb8b524483099d6414957add82c2424bebee8ba6d9a49bd608991e22",
+    "scripts/check-packagekit-offline-vm.py": "f808862590cf77fe70bc0fc9487b251cb87db25ba9f4c11f3b76c22ce2c5a543",
+    "tests/packagekit_offline_vm.py": "7cacdac217560aa3c92cd0e26a3370c32eb7ade4d8c1d06b35e53b4e1dccbde7",
+    "scripts/systemd_vm_support.py": "f0e9ca75e729c3d503663db0208aa82157dff76560fd9c91dd8507fe96ee3110"
+  },
+  "staging_gate": {
+    "passed": true,
+    "output": "OK: home:rodrigosbrito:lyra:staging (23 source packages, all targets published)\nOK: home:rodrigosbrito:vega:staging (6 source packages, all targets published)\nOK: home:rodrigosbrito:fina:staging (1 source packages, all targets published)\n"
+  },
+  "release": {
+    "passed": true,
+    "revision": "12",
+    "srcmd5": "7858b2697376f5c70a42e5796ee2e343",
+    "version": "0.2.5"
+  },
+  "release_promoted": false,
+  "host_installed": false,
+  "limits": [
+    "Signed fixture RPMs and ephemeral guest-only manifest key; not the real portal migration",
+    "Authenticated UID fixture; interactive Polkit not qualified",
+    "Secure Boot disabled probe and GRUB fixture; bootloader regeneration not qualified",
+    "Production manifest, exact portal migration with/without translations and exact candidate ISO remain pending",
+    "No parental protection enabled"
+  ]
+}

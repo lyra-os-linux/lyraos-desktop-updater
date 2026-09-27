@@ -65,7 +65,11 @@ no manifesto assinado. A regra pode liberar somente o portal e suas traduções,
 sem permitir a mesma troca para outros RPMs. Manifestos anteriores continuam
 compatíveis; listas inválidas ou regras amplas que anulem a restrição bloqueiam.
 Veja o [contrato do solver](docs/lyra-upgrade-architecture.md#contrato-do-solver).
-O [RPM 0.2.6 foi qualificado em staging](docs/vendor-scope-staging-qualification.md),
-incluindo a regressão PackageKit com dois reinícios. O manifesto real, o fluxo
-completo de migração/recuperação e a candidata ISO ainda precisam passar pelos
-respectivos gates antes da entrega automática do backport do portal.
+
+A versão 0.2.7 acrescenta [migrações de pacotes dentro da mesma versão do Lyra](docs/package-migration.md),
+com plano completo e payloads limitados às identidades assinadas.
+O [RPM 0.2.7 foi qualificado em staging](docs/package-migration-staging-qualification.md):
+145 testes Rust no OBS, migração e recuperação Btrfs/Snapper com seus binários,
+além da regressão PackageKit. O manifesto real do portal, sua migração com e
+sem traduções e a candidata ISO ainda precisam passar pelos respectivos gates.
+O canal release continua na 0.2.5.
