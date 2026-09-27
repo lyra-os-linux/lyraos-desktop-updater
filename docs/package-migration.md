@@ -97,3 +97,8 @@ On 2026-09-27, 145 Rust tests, 35 Python/UI tests, strict Clippy and formatting
 checks passed. The native RPM harness passed, and the final binaries passed
 three cold boots for success and four for recovery. See
 [results and reproduction](evidence/package-migration/README.md).
+
+The subsequent [0.2.7 staging RPM qualification](package-migration-staging-qualification.md)
+repeats the success/recovery boots with binaries extracted from the verified OBS
+artifact and exercises PackageKit coexistence. The real portal manifest,
+interactive authorization, full desktop baseline and candidate ISO remain gates.
