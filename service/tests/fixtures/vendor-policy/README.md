@@ -20,6 +20,11 @@ Ordinary regression tests consume these committed fixtures without root or
 network. They cover exact/directed allowlists, unknown identities, epoch/arch/
 repository matching, ambiguous metadata, escaped vendors, checksum failures,
 compressed metadata, plan/manifest drift and the shared staging/offline gate.
+Package scopes additionally cover exact names, unrelated RPMs using the same
+vendor pair, reversed transitions, legacy serialization, invalid/null scopes,
+ambiguous broad/scoped grants and the minimum capable updater version.
+Changing a scope invalidates the confirmed plan; the native isolated GPG test
+also rejects removing it from the signed manifest bytes.
 
 To regenerate in a disposable user namespace (normal user, never host root):
 

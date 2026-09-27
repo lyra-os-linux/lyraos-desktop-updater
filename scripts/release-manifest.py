@@ -153,10 +153,35 @@ def validate(document: object) -> dict:
     transitions = manifest["allowed_vendor_transitions"]
     if not isinstance(transitions, list):
         raise ManifestError("allowed_vendor_transitions must be an array")
+    pairs: dict[tuple[str, str], bool] = {}
     for transition in transitions:
-        transition = require_exact_fields(transition, {"from", "to"}, "vendor transition")
-        if any(not isinstance(transition[key], str) or not transition[key] for key in ("from", "to")):
-            raise ManifestError("vendor transition values must not be empty")
+        if not isinstance(transition, dict) or set(transition) not in (
+            {"from", "to"}, {"from", "to", "packages"}
+        ):
+            raise ManifestError("vendor transition fields differ from schema v1")
+        if any(
+            not isinstance(transition[key], str)
+            or not transition[key].strip()
+            or len(transition[key].encode("utf-8")) > 512
+            or any(ord(char) < 32 or 127 <= ord(char) <= 159 for char in transition[key])
+            for key in ("from", "to")
+        ):
+            raise ManifestError("vendor transition identity is invalid")
+        scoped = "packages" in transition
+        if scoped:
+            packages = transition["packages"]
+            if (
+                not isinstance(packages, list) or not packages
+                or any(not isinstance(name, str) or not PACKAGE.fullmatch(name) for name in packages)
+                or len(set(packages)) != len(packages)
+            ):
+                raise ManifestError("vendor transition packages must be valid, nonempty and unique")
+            if version_base(manifest["minimum_updater_version"]) < (0, 2, 5):
+                raise ManifestError("package-scoped vendor transitions require updater 0.2.5")
+        pair = (transition["from"], transition["to"])
+        if pair in pairs and pairs[pair] != scoped:
+            raise ManifestError("cannot mix scoped and pair-wide vendor transitions for the same pair")
+        pairs[pair] = scoped
     groups = manifest["lockstep_packages"]
     if not isinstance(groups, list):
         raise ManifestError("lockstep_packages must be an array")

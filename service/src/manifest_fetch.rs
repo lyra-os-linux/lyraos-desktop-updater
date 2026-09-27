@@ -505,13 +505,33 @@ mod tests {
         let keyring = home.path().join("trusted.gpg");
         super::fs::write(&keyring, run(&["--export"])).unwrap();
         let document = home.path().join("manifest.json");
-        super::fs::write(&document, b"{\"sequence\":1}\n").unwrap();
+        let mut manifest = serde_json::to_value(time_fixture()).unwrap();
+        manifest["minimum_updater_version"] = serde_json::json!("0.2.5");
+        manifest["allowed_vendor_transitions"] = serde_json::json!([
+            {"from":"SUSE", "to":"Lyra", "packages":["portal", "portal-lang"]}
+        ]);
+        let signed_bytes = serde_json::to_vec(&manifest).unwrap();
+        super::fs::write(&document, &signed_bytes).unwrap();
         run(&["--detach-sign", document.to_str().unwrap()]);
         let signature = home.path().join("manifest.json.sig");
         super::verify_signature(&document, &signature, &keyring).unwrap();
-        super::fs::write(&document, b"{\"sequence\":2}\n").unwrap();
+        let decoded: super::ReleaseManifest = serde_json::from_slice(&signed_bytes).unwrap();
+        assert_eq!(
+            decoded.allowed_vendor_transitions[0]
+                .packages
+                .as_ref()
+                .unwrap(),
+            &["portal", "portal-lang"]
+        );
+        manifest["allowed_vendor_transitions"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("packages");
+        super::fs::write(&document, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        // Removing the scope would authorize every package for the pair;
+        // retaining the old signature cannot authorize that broader policy.
         assert!(super::verify_signature(&document, &signature, &keyring).is_err());
-        super::fs::write(&document, b"{\"sequence\":1}\n").unwrap();
+        super::fs::write(&document, &signed_bytes).unwrap();
         super::fs::write(&keyring, b"").unwrap();
         assert!(super::verify_signature(&document, &signature, &keyring).is_err());
         let _ = super::Command::new("gpgconf")
