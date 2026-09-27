@@ -1,0 +1,137 @@
+{
+  "schema": 1,
+  "date": "2026-09-27",
+  "source": {
+    "passed": true,
+    "project": "home:rodrigosbrito:lyra:staging",
+    "revision": "39",
+    "srcmd5": "8263d6f2a9e64f2b2af9ee8f9a196730",
+    "commit": "5334acdb387549ca2ba56a6c61a5e85a4f7f8e6e",
+    "all_source_sha256_match": true,
+    "files": {
+      "build-source.txt": {
+        "sha256": "6d7ab55cddc8ad5b688d6f33a563d4a7967c2dc9447191c6917aab658e03b868",
+        "md5": "1afe7cfcd440f00dce1bff12c045b3fd",
+        "size": 155
+      },
+      "lyra-upgrade-0.2.3.tar.zst": {
+        "sha256": "14c57cb1d243ffba5d2b7726e199fdf9bb64338c19912e5cbe2d3989fd7e57b8",
+        "md5": "f6521e1f4f3a6136238474b9451872d9",
+        "size": 357303
+      },
+      "lyra-upgrade-0.2.4.tar.zst": {
+        "sha256": "f3f5a22f30d6ae093a188f2b00f720215079708726da55a2e5275b2d091d9205",
+        "md5": "08f2162bf7f11e641b8fc9fadb9e35d3",
+        "size": 385156
+      },
+      "lyra-upgrade-0.2.5.tar.zst": {
+        "sha256": "14aebb8ce0fd2873c768c56fe37540c5ca54d2292721366844899ec81d8cecfd",
+        "md5": "35c80a8ddbe2cd51aba8abe911c593a3",
+        "size": 387570
+      },
+      "lyra-upgrade.changes": {
+        "sha256": "7a7adec20044777916c4f1438fc60b9860feafebc1e1676c689ff0b1a9d6bacf",
+        "md5": "567d165251f5cd81cd850c61b7570ea7",
+        "size": 6316
+      },
+      "lyra-upgrade.spec": {
+        "sha256": "d6ff11ce39b33260c62ab6edf458484b594554904e6d2051c43cba4192f34d6b",
+        "md5": "5f15c3cb3de44d29f4c5cc01f18fdccd",
+        "size": 6668
+      },
+      "release-signing-key.gpg": {
+        "sha256": "f8bd374b5c218881cb731a706144d10ac5cb5b4e65f1d711f153b836788307fc",
+        "md5": "dfda34e0578a927f1a933b85f6411679",
+        "size": 2272
+      },
+      "vendor.tar.zst": {
+        "sha256": "8ee9908a676f7ca7db1b04856216060bb0a5abb000a79352bf0cb5cdb1ab1b5d",
+        "md5": "4bcaaaa4b1d2da2499a0774ce36405fc",
+        "size": 52745973
+      },
+      "lyra-upgrade-0.2.6.tar.zst": {
+        "sha256": "a6ed95ba8524bbdba8c4c299cb0a35e4c8b4d4afca4f0d364278c0bcf6ebe028",
+        "md5": "bd450298a57ef461dc0dc4203305dddd",
+        "size": 392969
+      }
+    }
+  },
+  "artifact": {
+    "url": "https://download.opensuse.org/repositories/home:/rodrigosbrito:/lyra:/staging/openSUSE_Leap_16.1",
+    "metadata_signature": "verified",
+    "signing_fingerprint": "399218A6E088C4053F4533BE58097F767EDCA82E",
+    "packages": [
+      {
+        "filename": "lyra-upgrade-0.2.6-lp161.1.1.x86_64.rpm",
+        "name": "lyra-upgrade",
+        "version": "0.2.6-lp161.1.1",
+        "architecture": "x86_64",
+        "size": 3887226,
+        "sha256": "30740d14ec768d54e5444034411d89baa6480b0ec7804b265c1d42fd3da2d65e",
+        "url": "https://download.opensuse.org/repositories/home:/rodrigosbrito:/lyra:/staging/openSUSE_Leap_16.1/x86_64/lyra-upgrade-0.2.6-lp161.1.1.x86_64.rpm",
+        "signature": "verified"
+      }
+    ],
+    "passed": true,
+    "srcmd5": "8263d6f2a9e64f2b2af9ee8f9a196730",
+    "source_commit": "5334acdb387549ca2ba56a6c61a5e85a4f7f8e6e",
+    "identity": [
+      "lyra-upgrade",
+      "0.2.6",
+      "lp161.1.1",
+      "obs://build.opensuse.org/home:rodrigosbrito:lyra:staging/openSUSE_Leap_16.1/8263d6f2a9e64f2b2af9ee8f9a196730-lyra-upgrade"
+    ],
+    "provenance": "commit=5334acdb387549ca2ba56a6c61a5e85a4f7f8e6e\nsource_epoch=1790512490\ncargo_lock_sha256=0f9fe9db5a4d3812ecb2d3833e7e8495d019b7b6099c34287123c7564da24fd9\n",
+    "units_match_git": true,
+    "release_key_unchanged": true,
+    "public_matches_build_api": true,
+    "offline_worker_sha256": "3853a5ce339a1492c418de5c1a3b59c307b4ae893a735919f01fd072e1aac718"
+  },
+  "build": {
+    "passed": true,
+    "rust_tests": 133,
+    "log_sha256": "80996923f3a708d8e8896745c65099177ed6c5cb0e2357d16801d3a62bd4e663",
+    "rpmlint": [
+      "[  372s] lyra-upgrade.x86_64: W: unstripped-binary-or-object /usr/bin/lyra-upgrade",
+      "[  372s] lyra-upgrade.x86_64: W: unstripped-binary-or-object /usr/bin/lyra-upgrade-probe",
+      "[  372s] lyra-upgrade.x86_64: W: unstripped-binary-or-object /usr/bin/lyra-upgrade-ui",
+      "[  372s] lyra-upgrade.x86_64: W: unstripped-binary-or-object /usr/libexec/lyra-upgrade-offline",
+      "[  372s] lyra-upgrade.x86_64: W: unstripped-binary-or-object /usr/libexec/lyra-upgrade-service",
+      "[  372s] lyra-upgrade.x86_64: W: unstripped-binary-or-object /usr/libexec/lyra-upgrade-verify",
+      "[  372s] lyra-upgrade.x86_64: E: polkit-untracked-privilege (Badness: 10) org.lyraos.Upgrade.manage (auth_admin:auth_admin:auth_admin_keep)"
+    ]
+  },
+  "dependencies": {
+    "passed": true,
+    "same_file_contents_modes_links": true,
+    "entries": 28146,
+    "old_archive": "analysis/2026-09-19/updater-packagekit/obs-source-final/vendor.tar.zst",
+    "new_archive": "sources/vendor.tar.zst",
+    "note": "Archive bytes differ due to normalized source commit timestamps."
+  },
+  "vm": {
+    "passed": true,
+    "harness": "scripts/check-packagekit-offline-vm.py",
+    "harness_sha256": "f808862590cf77fe70bc0fc9487b251cb87db25ba9f4c11f3b76c22ce2c5a543",
+    "guest_scenarios_sha256": "7cacdac217560aa3c92cd0e26a3370c32eb7ade4d8c1d06b35e53b4e1dccbde7",
+    "kernel": "6.12.0-160100.5-default",
+    "reboots": 2,
+    "worker_sha256": "3853a5ce339a1492c418de5c1a3b59c307b4ae893a735919f01fd072e1aac718",
+    "logs": {
+      "prepare.log": "5d8883d8fee48c8a4d9303e4c9be549220c7c3aae35d40cf672bb2fcd847dc28",
+      "offline.log": "845d741d5d731d7846b167c813f77a382d4981ac96a31b9ed77774df44bd62bc",
+      "verify.log": "1a05ac129d2d2cee5ce5c3096ddbb64d543a6789e59960d554792f47576f44a3"
+    }
+  },
+  "staging_gate": {
+    "passed": true,
+    "output": "OK: home:rodrigosbrito:lyra:staging (23 source packages, all targets published)\nOK: home:rodrigosbrito:vega:staging (6 source packages, all targets published)\nOK: home:rodrigosbrito:fina:staging (1 source packages, all targets published)\n"
+  },
+  "release_promoted": false,
+  "host_installed": false,
+  "limits": [
+    "PackageKit fixture is not a full signed Lyra portal migration",
+    "Portal manifest, exact solver, offline transition, snapshot/recovery and candidate ISO remain pending",
+    "No parental protection enabled"
+  ]
+}
