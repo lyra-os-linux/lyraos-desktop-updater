@@ -92,7 +92,7 @@ impl DiscoveryBackend for PreparedDiscovery<'_> {
         arguments: &'static [&'static str],
     ) -> Result<CommandOutput, DiscoverError> {
         if program != "zypper" {
-            return SystemBackend.run(program, arguments);
+            return crate::readonly_discovery::ReadOnlyDiscovery.run(program, arguments);
         }
         if !matches!(
             arguments,

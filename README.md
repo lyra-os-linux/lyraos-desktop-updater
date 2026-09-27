@@ -73,3 +73,7 @@ O [RPM 0.2.7 foi qualificado em staging](docs/package-migration-staging-qualific
 além da regressão PackageKit. O manifesto real do portal, sua migração com e
 sem traduções e a candidata ISO ainda precisam passar pelos respectivos gates.
 O canal release continua na 0.2.5.
+
+A versão 0.2.8 corrige a [consulta ao Snapper durante o planejamento sem
+privilégios](docs/snapper-readiness-qualification.md), mantendo a recusa quando
+não for possível verificar a configuração de recuperação.

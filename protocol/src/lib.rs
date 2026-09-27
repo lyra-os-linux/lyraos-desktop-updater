@@ -20,6 +20,10 @@ pub enum Request {
         protocol_version: u32,
         request_id: String,
     },
+    ReadRecoveryReadiness {
+        protocol_version: u32,
+        request_id: String,
+    },
     Inspect {
         protocol_version: u32,
         request_id: String,
@@ -68,6 +72,9 @@ impl Request {
             }
             | Self::ReadTrustState {
                 protocol_version, ..
+            }
+            | Self::ReadRecoveryReadiness {
+                protocol_version, ..
             } => *protocol_version,
             Self::Inspect {
                 protocol_version, ..
@@ -99,9 +106,9 @@ impl Request {
 
     pub fn request_id(&self) -> &str {
         match self {
-            Self::CheckRelease { request_id, .. } | Self::ReadTrustState { request_id, .. } => {
-                request_id
-            }
+            Self::CheckRelease { request_id, .. }
+            | Self::ReadTrustState { request_id, .. }
+            | Self::ReadRecoveryReadiness { request_id, .. } => request_id,
             Self::Inspect { request_id, .. }
             | Self::PlanUpdate { request_id, .. }
             | Self::PlanReleaseUpgrade { request_id, .. }
@@ -148,6 +155,10 @@ pub enum Response {
     TrustState {
         request_id: String,
         last_manifest_sequence: Option<u64>,
+    },
+    RecoveryReadiness {
+        request_id: String,
+        snapper_root_configured: bool,
     },
     Rejected {
         request_id: String,
@@ -236,6 +247,19 @@ pub struct OperationEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn readiness_query_cannot_carry_commands_or_snapshot_selectors() {
+        let base = serde_json::json!({"kind":"ReadRecoveryReadiness","protocol_version":3,"request_id":"probe"});
+        let request: Request = serde_json::from_value(base.clone()).unwrap();
+        assert!(!request.needs_authorization());
+        assert!(request.is_supported());
+        for key in ["argv", "path", "config", "operation_id"] {
+            let mut injected = base.clone();
+            injected[key] = serde_json::json!("untrusted");
+            assert!(serde_json::from_value::<Request>(injected).is_err());
+        }
+    }
 
     #[test]
     fn only_admin_operations_request_authorization() {

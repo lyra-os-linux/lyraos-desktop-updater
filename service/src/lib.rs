@@ -11,4 +11,5 @@ pub mod simulation;
 pub mod solver_xml;
 pub mod vendor_metadata;
 
+pub mod readonly_discovery;
 pub mod recovery;
