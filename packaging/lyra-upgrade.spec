@@ -6,7 +6,7 @@
 #
 
 Name:           lyra-upgrade
-Version:        0.2.8
+Version:        0.2.9
 Release:        0
 Summary:        Atualização recuperável do Lyra OS Desktop
 License:        GPL-3.0-only

@@ -10,7 +10,7 @@ Conflicts=shutdown.target
 [Service]
 Type=oneshot
 PrivateNetwork=yes
-ExecStart=/usr/libexec/lyra-upgrade-offline
+ExecStart=/usr/libexec/lyra-upgrade-offline --reboot
 StandardOutput=journal
 StandardError=journal
 TimeoutStartSec=infinity
