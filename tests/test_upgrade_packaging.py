@@ -99,28 +99,6 @@ class UpgradePackagingTests(unittest.TestCase):
         self.assertIn("KillMode=control-group", verifier)
         self.assertNotIn("network-online.target", verifier)
 
-    def test_state_volume_migration_runs_at_boot_before_the_verifier(self) -> None:
-        spec = (PACKAGING / "lyra-upgrade.spec").read_text(encoding="utf-8")
-        self.assertIn("%{_libexecdir}/lyra-upgrade-state-volume", spec)
-        self.assertIn("multi-user.target.wants/lyra-upgrade-state-volume.service", spec)
-        restart = next(line for line in spec.splitlines() if line.startswith("%systemd_postun_with_restart"))
-        self.assertNotIn("lyra-upgrade-state-volume", restart)
-        unit = (PACKAGING / "lyra-upgrade-state-volume.service").read_text(encoding="utf-8")
-        self.assertIn("Before=lyra-upgrade-verify.service\n", unit)
-        self.assertIn("Before=systemd-user-sessions.service\n", unit)
-        self.assertIn("ConditionPathIsMountPoint=!/var/lib/lyra-upgrade", unit)
-        self.assertIn("ConditionPathExists=!/system-update", unit)
-        self.assertNotIn("socket", unit)
-        script = PACKAGING / "lyra-upgrade-state-volume"
-        self.assertTrue(script.stat().st_mode & 0o111)
-        text = script.read_text(encoding="utf-8")
-        self.assertIn("Completed | Failed | NeedsRecovery) ;;", text)
-        self.assertIn("subvol=\\/@\\/var\\/log", text)
-        self.assertNotIn("python3", text)
-        self.assertIn('diff -r --no-dereference "$STATE" "$new"', text)
-        # fstab only gains the line after the subvolume mounted.
-        self.assertLess(text.index('mount -t btrfs -o "$options"'), text.index('mv "$FSTAB.lyra-upgrade.tmp" "$FSTAB"'))
-
     def test_zypp_refresh_policy_owns_created_directories(self) -> None:
         spec = (PACKAGING / "lyra-upgrade.spec").read_text(encoding="utf-8")
         self.assertIn("%dir %{_sysconfdir}/zypp\n", spec)

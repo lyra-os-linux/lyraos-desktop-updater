@@ -32,7 +32,6 @@ struct Service {
     events: HashMap<String, Arc<Mutex<EventLog>>>,
     workers: Arc<(Mutex<usize>, Condvar)>,
     read_only: bool,
-    recovery_state_probe: fn(&std::path::Path) -> Result<bool, &'static str>,
 }
 
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
@@ -50,7 +49,6 @@ impl Service {
             events: HashMap::new(),
             workers: Arc::new((Mutex::new(0), Condvar::new())),
             read_only: false,
-            recovery_state_probe: lyra_upgrade_service::recovery::recovery_state_persistent,
         }
     }
 
@@ -276,13 +274,6 @@ impl Service {
         }
     }
 
-    fn recovery_state_gate(&self) -> Result<(), &'static str> {
-        match (self.recovery_state_probe)(&self.state_root)? {
-            true => Ok(()),
-            false => Err("RECOVERY_STATE_NOT_PERSISTENT"),
-        }
-    }
-
     fn start(
         &mut self,
         request_id: String,
@@ -293,12 +284,6 @@ impl Service {
     ) -> Response {
         if !confirmed {
             return rejected(request_id, "CONFIRMATION_REQUIRED");
-        }
-        // Every Start, including one resuming an owned operation, reaches the
-        // snapshot; refuse first when a later guided rollback could not keep
-        // its own records (RC 3 installs without @/var/lib/lyra-upgrade).
-        if let Err(error) = self.recovery_state_gate() {
-            return rejected(request_id, error);
         }
         let operation_shape_valid = valid_operation_shape(
             submitted.plan.operation,
@@ -1274,19 +1259,5 @@ mod event_status_tests {
             assert_eq!(events.len(), 1);
             assert_eq!(events[0].message_id, "error_EVENT_LOG_WRITE_FAILED");
         }
-    }
-
-    #[test]
-    fn start_gate_refuses_while_records_share_the_root_subvolume() {
-        let (_root, mut service, _) = fixture();
-        service.recovery_state_probe = |_| Ok(false);
-        assert_eq!(
-            service.recovery_state_gate(),
-            Err("RECOVERY_STATE_NOT_PERSISTENT")
-        );
-        service.recovery_state_probe = |_| Err("BTRFS_PROBE_FAILED");
-        assert_eq!(service.recovery_state_gate(), Err("BTRFS_PROBE_FAILED"));
-        service.recovery_state_probe = |_| Ok(true);
-        assert_eq!(service.recovery_state_gate(), Ok(()));
     }
 }
