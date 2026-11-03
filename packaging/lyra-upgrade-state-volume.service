@@ -1,0 +1,18 @@
+[Unit]
+Description=Keep Lyra Upgrade recovery records outside the root snapshot
+Documentation=https://github.com/lyra-os-linux/lyraos-desktop-updater
+After=local-fs.target
+Before=lyra-upgrade-verify.service
+# No login, and so no Start from the UI, while the records are being copied.
+Before=systemd-user-sessions.service
+ConditionPathIsMountPoint=!/var/lib/lyra-upgrade
+ConditionPathExists=!/system-update
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/lyra-upgrade-state-volume
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
