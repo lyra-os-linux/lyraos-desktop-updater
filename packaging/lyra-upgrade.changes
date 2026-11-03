@@ -1,4 +1,13 @@
 -------------------------------------------------------------------
+Mon Nov 02 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
+
+- Prepare 0.2.10: move /var/lib/lyra-upgrade to its own Btrfs
+  subvolume at boot on installs that lack it (Lyra 16.1 RC 3 layout),
+  only when every operation is terminal and the fstab follows the
+  installer layout. Guided rollback refused those installs with
+  RECOVERY_STATE_NOT_PERSISTENT.
+
+-------------------------------------------------------------------
 Sun Sep 27 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
 
 - Prepare 0.2.9: request reboot after an owned offline operation settles.

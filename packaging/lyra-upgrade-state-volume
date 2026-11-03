@@ -1,0 +1,99 @@
+#!/bin/bash
+# Give /var/lib/lyra-upgrade its own Btrfs subvolume on installations that
+# predate it (Lyra 16.1 RC 3 installer). Guided rollback refuses to run while
+# the operation records share the root subvolume, because restoring a root
+# snapshot would rewind them (RECOVERY_STATE_NOT_PERSISTENT).
+#
+# Runs once per boot until it succeeds; every unexpected layout or an
+# operation that is not finished leaves the system untouched.
+set -euo pipefail
+
+STATE=/var/lib/lyra-upgrade
+FSTAB=/etc/fstab
+TOP=/run/lyra-upgrade-state-volume
+
+log() { echo "lyra-upgrade-state-volume: $*"; }
+
+[ "$(findmnt -no FSTYPE /)" = btrfs ] || { log "root is not Btrfs; nothing to do"; exit 0; }
+if mountpoint -q "$STATE"; then
+	log "$STATE is already a mount point"
+	exit 0
+fi
+
+# Never move records an operation may still be writing; terminal states
+# (OperationState::is_terminal) are safe to copy.
+if [ -d "$STATE/operations" ]; then
+	busy=""
+	for record in "$STATE"/operations/*/state.json; do
+		[ -e "$record" ] || continue
+		# Pretty-printed by the Updater; anything unparsable counts as busy.
+		state=$(sed -n 's/^  "state": "\([A-Za-z]*\)",$/\1/p' "$record" | head -n 1)
+		case "$state" in
+		Completed | Failed | NeedsRecovery) ;;
+		*) busy="$busy $(basename "$(dirname "$record")")=${state:-unreadable}" ;;
+		esac
+	done
+	if [ -n "$busy" ]; then
+		log "operations not finished ($busy); deferring"
+		exit 0
+	fi
+fi
+
+uuid=$(findmnt -no UUID /)
+# Copy the options of the installer's /var/log subvolume line; any other
+# layout is not one we created, so leave it to the administrator.
+template=$(awk -v u="UUID=$uuid" '$1 == u && $2 == "/var/log" && $3 == "btrfs" && $4 ~ /(^|,)subvol=\/@\/var\/log(,|$)/ {print $4; exit}' "$FSTAB")
+if [ -z "$template" ]; then
+	log "no installer /var/log subvolume line in $FSTAB; layout unknown, nothing changed"
+	exit 0
+fi
+options=$(printf '%s' "$template" | sed 's|subvol=/@/var/log|subvol=/@/var/lib/lyra-upgrade|')
+line="UUID=$uuid $STATE btrfs $options 0 0"
+if awk -v s="$STATE" '$2 == s {found=1} END {exit !found}' "$FSTAB"; then
+	log "$FSTAB already lists $STATE; mounting it"
+	mount "$STATE"
+	exit 0
+fi
+
+mkdir -p "$TOP"
+mount -o subvolid=5 "UUID=$uuid" "$TOP"
+trap 'umount "$TOP" 2>/dev/null || true; rmdir "$TOP" 2>/dev/null || true' EXIT
+parent="$TOP/@/var/lib"
+[ -d "$parent" ] || { log "$parent is missing; layout unknown, nothing changed"; exit 0; }
+
+new="$parent/.lyra-upgrade.new"
+if [ -e "$new" ]; then
+	btrfs subvolume delete "$new" >/dev/null
+fi
+btrfs subvolume create "$new" >/dev/null
+chmod 0700 "$new"
+if [ -d "$STATE" ]; then
+	cp -a "$STATE/." "$new/"
+	diff -r "$STATE" "$new" >/dev/null || { btrfs subvolume delete "$new" >/dev/null; log "copy mismatch; nothing changed"; exit 1; }
+fi
+
+# Keep the previous directory (when the booted root is @ it is $STATE itself).
+if [ -e "$parent/lyra-upgrade" ]; then
+	mv "$parent/lyra-upgrade" "$parent/.lyra-upgrade.pre-subvolume.$(date +%Y%m%dT%H%M%S)"
+fi
+mv "$new" "$parent/lyra-upgrade"
+mkdir -p "$STATE"
+mount -t btrfs -o "$options" "UUID=$uuid" "$STATE"
+
+root_id=$(btrfs inspect-internal rootid /)
+state_id=$(btrfs inspect-internal rootid "$STATE")
+if [ "$root_id" = "$state_id" ]; then
+	umount "$STATE"
+	log "state still on the root subvolume ($root_id); $FSTAB unchanged"
+	exit 1
+fi
+
+# Only a line that already mounted goes to fstab: a broken one would stop the
+# next boot in emergency mode.
+cp -a "$FSTAB" "$FSTAB.lyra-upgrade.tmp"
+printf '%s\n' "$line" >>"$FSTAB.lyra-upgrade.tmp"
+sync "$FSTAB.lyra-upgrade.tmp"
+mv "$FSTAB.lyra-upgrade.tmp" "$FSTAB"
+sync "$(dirname "$FSTAB")"
+systemctl daemon-reload
+log "moved $STATE to subvolume $state_id (root $root_id)"
