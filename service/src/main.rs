@@ -276,6 +276,13 @@ impl Service {
         }
     }
 
+    fn recovery_state_gate(&self) -> Result<(), &'static str> {
+        match (self.recovery_state_probe)(&self.state_root)? {
+            true => Ok(()),
+            false => Err("RECOVERY_STATE_NOT_PERSISTENT"),
+        }
+    }
+
     fn start(
         &mut self,
         request_id: String,
@@ -286,6 +293,12 @@ impl Service {
     ) -> Response {
         if !confirmed {
             return rejected(request_id, "CONFIRMATION_REQUIRED");
+        }
+        // Every Start, including one resuming an owned operation, reaches the
+        // snapshot; refuse first when a later guided rollback could not keep
+        // its own records (RC 3 installs without @/var/lib/lyra-upgrade).
+        if let Err(error) = self.recovery_state_gate() {
+            return rejected(request_id, error);
         }
         let operation_shape_valid = valid_operation_shape(
             submitted.plan.operation,
@@ -308,13 +321,6 @@ impl Service {
             return rejected(request_id, "PLAN_HASH_MISMATCH");
         }
         if !operation_owned_by(&self.state_root, &operation_id, self.caller_uid) {
-            // Refuse before the snapshot when a later guided rollback could not
-            // keep its own records (RC 3 installs without @/var/lib/lyra-upgrade).
-            match (self.recovery_state_probe)(&self.state_root) {
-                Ok(true) => {}
-                Ok(false) => return rejected(request_id, "RECOVERY_STATE_NOT_PERSISTENT"),
-                Err(error) => return rejected(request_id, error),
-            }
             // Preview is untrusted. Recompute after authentication, before writing.
             if std::fs::symlink_metadata(self.state_root.join(&operation_id)).is_ok() {
                 return rejected(request_id, "OPERATION_NOT_FOUND");
@@ -1268,5 +1274,19 @@ mod event_status_tests {
             assert_eq!(events.len(), 1);
             assert_eq!(events[0].message_id, "error_EVENT_LOG_WRITE_FAILED");
         }
+    }
+
+    #[test]
+    fn start_gate_refuses_while_records_share_the_root_subvolume() {
+        let (_root, mut service, _) = fixture();
+        service.recovery_state_probe = |_| Ok(false);
+        assert_eq!(
+            service.recovery_state_gate(),
+            Err("RECOVERY_STATE_NOT_PERSISTENT")
+        );
+        service.recovery_state_probe = |_| Err("BTRFS_PROBE_FAILED");
+        assert_eq!(service.recovery_state_gate(), Err("BTRFS_PROBE_FAILED"));
+        service.recovery_state_probe = |_| Ok(true);
+        assert_eq!(service.recovery_state_gate(), Ok(()));
     }
 }
