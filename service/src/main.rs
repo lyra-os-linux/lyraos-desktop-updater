@@ -32,6 +32,7 @@ struct Service {
     events: HashMap<String, Arc<Mutex<EventLog>>>,
     workers: Arc<(Mutex<usize>, Condvar)>,
     read_only: bool,
+    recovery_state_probe: fn(&std::path::Path) -> Result<bool, &'static str>,
 }
 
 #[derive(Clone, serde::Deserialize, serde::Serialize)]
@@ -49,6 +50,7 @@ impl Service {
             events: HashMap::new(),
             workers: Arc::new((Mutex::new(0), Condvar::new())),
             read_only: false,
+            recovery_state_probe: lyra_upgrade_service::recovery::recovery_state_persistent,
         }
     }
 
@@ -306,6 +308,13 @@ impl Service {
             return rejected(request_id, "PLAN_HASH_MISMATCH");
         }
         if !operation_owned_by(&self.state_root, &operation_id, self.caller_uid) {
+            // Refuse before the snapshot when a later guided rollback could not
+            // keep its own records (RC 3 installs without @/var/lib/lyra-upgrade).
+            match (self.recovery_state_probe)(&self.state_root) {
+                Ok(true) => {}
+                Ok(false) => return rejected(request_id, "RECOVERY_STATE_NOT_PERSISTENT"),
+                Err(error) => return rejected(request_id, error),
+            }
             // Preview is untrusted. Recompute after authentication, before writing.
             if std::fs::symlink_metadata(self.state_root.join(&operation_id)).is_ok() {
                 return rejected(request_id, "OPERATION_NOT_FOUND");

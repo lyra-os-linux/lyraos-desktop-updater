@@ -6,6 +6,8 @@ Mon Nov 02 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
   only when every operation is terminal and the fstab follows the
   installer layout. Guided rollback refused those installs with
   RECOVERY_STATE_NOT_PERSISTENT.
+- Refuse Start with RECOVERY_STATE_NOT_PERSISTENT before any snapshot
+  or package change while the records still share the root subvolume.
 
 -------------------------------------------------------------------
 Sun Sep 27 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
