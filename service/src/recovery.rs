@@ -43,7 +43,7 @@ pub fn schedule_rollback(
     {
         return Err("SNAPSHOT_RECOVERY_UNSUPPORTED");
     }
-    if !recovery_state_persistent(state_root)? {
+    if containing_subvolume_id(state_root)? == containing_subvolume_id(Path::new("/"))? {
         return Err("RECOVERY_STATE_NOT_PERSISTENT");
     }
     let source_snapshot = inspect_subvolume(&source)?;
@@ -65,19 +65,6 @@ pub fn schedule_rollback(
         save_state(state_root, state).map_err(|_| "STATE_WRITE_FAILED")?;
     }
     result
-}
-
-/// Whether operation records under `state_root` live outside the root
-/// subvolume, so a snapshot rollback of `/` cannot rewind them. The records
-/// may not exist yet: the nearest existing ancestor decides.
-pub fn recovery_state_persistent(state_root: &Path) -> Result<bool, &'static str> {
-    let existing = nearest_existing_ancestor(state_root).ok_or("BTRFS_PROBE_FAILED")?;
-    Ok(containing_subvolume_id(existing)? != containing_subvolume_id(Path::new("/"))?)
-}
-
-fn nearest_existing_ancestor(path: &Path) -> Option<&Path> {
-    path.ancestors()
-        .find(|candidate| fs::symlink_metadata(candidate).is_ok_and(|meta| meta.is_dir()))
 }
 
 fn finish_rollback(
@@ -130,29 +117,4 @@ fn finish_rollback(
     state.error_code = None;
     state.last_completed_step = Some("rollback-scheduled".into());
     save_state(state_root, state).map_err(|_| "STATE_WRITE_FAILED")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::nearest_existing_ancestor;
-
-    #[test]
-    fn nearest_existing_ancestor_skips_records_not_created_yet() {
-        let root = tempfile::tempdir().unwrap();
-        let missing = root.path().join("lyra-upgrade/operations");
-        assert_eq!(nearest_existing_ancestor(&missing), Some(root.path()));
-        std::fs::create_dir_all(&missing).unwrap();
-        assert_eq!(nearest_existing_ancestor(&missing), Some(missing.as_path()));
-    }
-
-    #[test]
-    fn nearest_existing_ancestor_ignores_regular_files() {
-        let root = tempfile::tempdir().unwrap();
-        let file = root.path().join("lyra-upgrade");
-        std::fs::write(&file, b"").unwrap();
-        assert_eq!(
-            nearest_existing_ancestor(&file.join("operations")),
-            Some(root.path())
-        );
-    }
 }

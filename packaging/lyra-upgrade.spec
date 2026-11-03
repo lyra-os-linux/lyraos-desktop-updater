@@ -6,7 +6,7 @@
 #
 
 Name:           lyra-upgrade
-Version:        0.2.10
+Version:        0.2.9
 Release:        0
 Summary:        Atualização recuperável do Lyra OS Desktop
 License:        GPL-3.0-only
@@ -28,8 +28,6 @@ BuildRequires:  rust >= 1.85
 BuildRequires:  zstd
 Requires:       btrfsprogs
 Requires:       curl
-Requires:       diffutils
-Requires:       gawk
 Requires:       coreutils
 Requires:       dracut
 Requires:       gnupg
@@ -70,8 +68,6 @@ install -Dm0755 target/release/lyra-upgrade-offline \
     %{buildroot}%{_libexecdir}/lyra-upgrade-offline
 install -Dm0755 target/release/lyra-upgrade-verify \
     %{buildroot}%{_libexecdir}/lyra-upgrade-verify
-install -Dm0755 packaging/lyra-upgrade-state-volume \
-    %{buildroot}%{_libexecdir}/lyra-upgrade-state-volume
 install -Dm0755 target/release/lyra-upgrade-probe \
     %{buildroot}%{_bindir}/lyra-upgrade-probe
 install -Dm0755 target/release/lyra-upgrade-ui \
@@ -90,8 +86,6 @@ install -Dm0644 packaging/lyra-upgrade-verify.service \
     %{buildroot}%{_unitdir}/lyra-upgrade-verify.service
 install -Dm0644 packaging/lyra-upgrade-probe.service \
     %{buildroot}%{_unitdir}/lyra-upgrade-probe.service
-install -Dm0644 packaging/lyra-upgrade-state-volume.service \
-    %{buildroot}%{_unitdir}/lyra-upgrade-state-volume.service
 install -Dm0644 packaging/lyra-upgrade-query.socket \
     %{buildroot}%{_unitdir}/lyra-upgrade-query.socket
 install -Dm0644 packaging/lyra-upgrade-query@.service \
@@ -115,24 +109,22 @@ ln -s %{_unitdir}/lyra-upgrade-verify.service \
     %{buildroot}%{_unitdir}/multi-user.target.wants/lyra-upgrade-verify.service
 ln -s %{_unitdir}/lyra-upgrade-probe.service \
     %{buildroot}%{_unitdir}/multi-user.target.wants/lyra-upgrade-probe.service
-ln -s %{_unitdir}/lyra-upgrade-state-volume.service \
-    %{buildroot}%{_unitdir}/multi-user.target.wants/lyra-upgrade-state-volume.service
 
 %check
 cargo test --offline --workspace
 desktop-file-validate %{buildroot}%{_datadir}/applications/org.lyraos.LyraUpgrade.desktop
 
 %pre
-%systemd_pre lyra-upgrade-query.socket lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service lyra-upgrade-state-volume.service
+%systemd_pre lyra-upgrade-query.socket lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service
 
 %post
-%systemd_post lyra-upgrade-query.socket lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service lyra-upgrade-state-volume.service
+%systemd_post lyra-upgrade-query.socket lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service
 if [ -d /run/systemd/system ]; then
     systemctl start lyra-upgrade-query.socket >/dev/null 2>&1 || :
 fi
 
 %preun
-%systemd_preun lyra-upgrade-query.socket lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service lyra-upgrade-state-volume.service
+%systemd_preun lyra-upgrade-query.socket lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service
 
 %postun
 %systemd_postun_with_restart lyra-upgrade-query.socket lyra-upgrade-offline.service lyra-upgrade-verify.service lyra-upgrade-probe.service
@@ -148,7 +140,6 @@ fi
 %{_libexecdir}/lyra-upgrade-service
 %{_libexecdir}/lyra-upgrade-offline
 %{_libexecdir}/lyra-upgrade-verify
-%{_libexecdir}/lyra-upgrade-state-volume
 %{_datadir}/polkit-1/actions/org.lyraos.Upgrade.policy
 %{_datadir}/applications/org.lyraos.LyraUpgrade.desktop
 %{_datadir}/icons/hicolor/32x32/apps/org.lyraos.LyraUpgrade.png
@@ -158,7 +149,6 @@ fi
 %{_unitdir}/lyra-upgrade-offline.service
 %{_unitdir}/lyra-upgrade-verify.service
 %{_unitdir}/lyra-upgrade-probe.service
-%{_unitdir}/lyra-upgrade-state-volume.service
 %{_unitdir}/lyra-upgrade-query.socket
 %{_unitdir}/lyra-upgrade-query@.service
 %dir %{_unitdir}/sockets.target.wants
@@ -167,7 +157,6 @@ fi
 %{_unitdir}/system-update.target.wants/lyra-upgrade-offline.service
 %{_unitdir}/multi-user.target.wants/lyra-upgrade-verify.service
 %{_unitdir}/multi-user.target.wants/lyra-upgrade-probe.service
-%{_unitdir}/multi-user.target.wants/lyra-upgrade-state-volume.service
 %dir %{_sysconfdir}/zypp
 %dir %{_sysconfdir}/zypp/zypp.conf.d
 %config(noreplace) %{_sysconfdir}/zypp/zypp.conf.d/90-lyra-refresh.conf
