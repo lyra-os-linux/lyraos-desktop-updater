@@ -69,7 +69,8 @@ btrfs subvolume create "$new" >/dev/null
 chmod 0700 "$new"
 if [ -d "$STATE" ]; then
 	cp -a "$STATE/." "$new/"
-	diff -r "$STATE" "$new" >/dev/null || { btrfs subvolume delete "$new" >/dev/null; log "copy mismatch; nothing changed"; exit 1; }
+	# Compare links, not their targets: the zypp cache keeps dangling ones.
+	diff -r --no-dereference "$STATE" "$new" >/dev/null || { btrfs subvolume delete "$new" >/dev/null; log "copy mismatch; nothing changed"; exit 1; }
 fi
 
 # Keep the previous directory (when the booted root is @ it is $STATE itself).

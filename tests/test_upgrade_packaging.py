@@ -117,6 +117,7 @@ class UpgradePackagingTests(unittest.TestCase):
         self.assertIn("Completed | Failed | NeedsRecovery) ;;", text)
         self.assertIn("subvol=\\/@\\/var\\/log", text)
         self.assertNotIn("python3", text)
+        self.assertIn('diff -r --no-dereference "$STATE" "$new"', text)
         # fstab only gains the line after the subvolume mounted.
         self.assertLess(text.index('mount -t btrfs -o "$options"'), text.index('mv "$FSTAB.lyra-upgrade.tmp" "$FSTAB"'))
 
