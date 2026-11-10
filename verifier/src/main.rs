@@ -118,7 +118,7 @@ fn main() {
             .expect("interrupted state classified during scan");
         state.sequence = state.sequence.saturating_add(1);
         state.error_code = Some("OPERATION_INTERRUPTED".into());
-        persist(&state);
+        persist(&mut state);
         eprintln!(
             "lyra-upgrade-verify: OPERATION_INTERRUPTED operation={}",
             state.operation_id
@@ -142,7 +142,7 @@ fn main() {
             .transition_to(OperationState::VerifyingBoot)
             .expect("post-boot transition");
     }
-    persist(&state);
+    persist(&mut state);
     // Supervise all probes, including discovery subprocesses. GNU timeout
     // signals the whole process group, then kills it after a grace period.
     // The parent remains alive to persist a recovery result on timeout.
@@ -164,13 +164,14 @@ fn main() {
         state.error_code = Some(error.code().into());
         eprintln!("lyra-upgrade-verify: {}", error.code());
     }
-    persist(&state);
+    persist(&mut state);
     if state.state != OperationState::Completed || incomplete_scan || interrupted {
         std::process::exit(1);
     }
 }
 
-fn persist(state: &lyra_upgrade_core::OperationStateRecord) {
+fn persist(state: &mut lyra_upgrade_core::OperationStateRecord) {
+    state.touch();
     if let Err(error) = save_state(Path::new(STATE_ROOT), state) {
         eprintln!("lyra-upgrade-verify: cannot persist verification result: {error:?}");
         std::process::exit(1);
