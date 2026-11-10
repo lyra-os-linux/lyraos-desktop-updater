@@ -77,24 +77,62 @@
     "en-US": {
       retry: "The safety check could not be completed. Resolve the condition and check again.",
       recovery: "The update stopped after the recovery snapshot. Review details and choose whether to restore it.",
-      restart: "Zypper was updated and must be restarted before the operation can continue."
+      restart: "Zypper was updated and must be restarted before the operation can continue.",
+      verify: "After the restart, Lyra could not confirm that the update worked. Review the details and choose whether to restore the recovery snapshot.",
+      release: "The Lyra OS update information is unavailable or invalid. Try again later.",
+      reported: "The update service reported an error that this version cannot describe. Open the details for more information.",
+      MIGRATION_ALREADY_APPLIED: "This migration was already applied.",
+      MIGRATION_POLICY_FAILED: "The package migration policy could not be applied.",
+      NOT_CANCELABLE: "This step can no longer be cancelled. Wait for it to finish.",
+      RECOVERY_NOT_REQUIRED: "Recovery is not needed: the system is already in a consistent state.",
+      SNAPSHOT_NOT_AVAILABLE: "The recovery snapshot is no longer available. Use administrative recovery."
     },
     "pt-BR": {
       retry: "A verificação de segurança não pôde ser concluída. Corrija a condição e verifique novamente.",
       recovery: "A atualização parou após o snapshot de recuperação. Revise os detalhes e escolha se deseja restaurá-lo.",
-      restart: "O Zypper foi atualizado e precisa ser reiniciado antes de continuar a operação."
+      restart: "O Zypper foi atualizado e precisa ser reiniciado antes de continuar a operação.",
+      verify: "Depois de reiniciar, o Lyra não conseguiu confirmar que a atualização deu certo. Revise os detalhes e escolha se deseja restaurar o snapshot de recuperação.",
+      release: "As informações de atualização do Lyra OS estão indisponíveis ou inválidas. Tente novamente mais tarde.",
+      reported: "O serviço de atualização informou um erro que esta versão não sabe descrever. Abra os detalhes para mais informações.",
+      MIGRATION_ALREADY_APPLIED: "Esta migração já foi aplicada.",
+      MIGRATION_POLICY_FAILED: "A política de migração de pacotes não pôde ser aplicada.",
+      NOT_CANCELABLE: "Esta etapa não pode mais ser cancelada. Aguarde o fim.",
+      RECOVERY_NOT_REQUIRED: "A recuperação não é necessária: o sistema já está em um estado consistente.",
+      SNAPSHOT_NOT_AVAILABLE: "O snapshot de recuperação não está mais disponível. Use a recuperação administrativa."
     },
     "es-ES": {
       retry: "No se pudo completar la comprobación de seguridad. Corrige la condición y vuelve a comprobar.",
       recovery: "La actualización se detuvo después de la instantánea de recuperación. Revisa los detalles y elige si deseas restaurarla.",
-      restart: "Zypper se actualizó y debe reiniciarse antes de continuar la operación."
+      restart: "Zypper se actualizó y debe reiniciarse antes de continuar la operación.",
+      verify: "Después de reiniciar, Lyra no pudo confirmar que la actualización funcionó. Revisa los detalles y elige si deseas restaurar la instantánea de recuperación.",
+      release: "La información de actualización de Lyra OS no está disponible o no es válida. Inténtalo de nuevo más tarde.",
+      reported: "El servicio de actualización informó un error que esta versión no sabe describir. Abre los detalles para más información.",
+      MIGRATION_ALREADY_APPLIED: "Esta migración ya se aplicó.",
+      MIGRATION_POLICY_FAILED: "No se pudo aplicar la política de migración de paquetes.",
+      NOT_CANCELABLE: "Este paso ya no se puede cancelar. Espera a que termine.",
+      RECOVERY_NOT_REQUIRED: "No se necesita recuperación: el sistema ya está en un estado coherente.",
+      SNAPSHOT_NOT_AVAILABLE: "La instantánea de recuperación ya no está disponible. Usa la recuperación administrativa."
     }
   };
-  const retryCodes=["PLAN_CHANGED","METADATA_REFRESH_FAILED","PLAN_REVALIDATION_FAILED","DOWNLOAD_FAILED","TRANSACTION_BUSY","SYSTEM_UPDATE_BUSY"];
-  const recoveryCodes=["SNAPSHOT_FAILED","ZYPPER_APPLY_FAILED","INITRAMFS_FAILED","BOOTLOADER_FAILED","INVALID_STATE_TRANSITION","OFFLINE_STAGE_FAILED"];
+  const retryCodes=["PLAN_CHANGED","METADATA_REFRESH_FAILED","PLAN_REVALIDATION_FAILED","DOWNLOAD_FAILED","TRANSACTION_BUSY","SYSTEM_UPDATE_BUSY","REPOSITORY_KEY_FAILED"];
+  const recoveryCodes=["SNAPSHOT_FAILED","ZYPPER_APPLY_FAILED","INITRAMFS_FAILED","BOOTLOADER_FAILED","INVALID_STATE_TRANSITION","OFFLINE_STAGE_FAILED","OFFLINE_APPLY_FAILED","PACKAGE_PRESERVATION_FAILED"];
+  // Emitidos pelo verifier depois do boot (lyraos-desktop#522).
+  const verifyCodes=["OPERATION_INTERRUPTED","POST_BOOT_DEPENDENCIES_FAILED","POST_BOOT_DISCOVERY_FAILED","POST_BOOT_FAILED_UNITS","POST_BOOT_FILESYSTEM_FAILED","POST_BOOT_GRUB_FAILED","POST_BOOT_INVENTORY_FAILED","POST_BOOT_RPM_DATABASE_FAILED","POST_BOOT_TARGET_NOT_ACTIVE","POST_BOOT_VERIFICATION_FAILED","POST_BOOT_VERIFICATION_TIMEOUT","POST_BOOT_WORKER_FAILED"];
+  const releaseCodes=["MANIFEST_CHANGED","MANIFEST_INVALID","MANIFEST_SEQUENCE_INVALID","RELEASE_CHANNEL_INVALID","RELEASE_NOT_AVAILABLE"];
+  // Só estes são, de fato, falha de comunicação com o serviço.
+  const communicationCodes=["QUERY_UNAVAILABLE","SERVICE_UNAVAILABLE","UNSUPPORTED_PROTOCOL","INVALID_REQUEST","INVALID_RESPONSE","READ_ONLY_REQUEST_REQUIRED"];
+  const ownCodes=["MIGRATION_ALREADY_APPLIED","MIGRATION_POLICY_FAILED","NOT_CANCELABLE","RECOVERY_NOT_REQUIRED","SNAPSHOT_NOT_AVAILABLE"];
   for (const [locale, additions] of Object.entries(messages)) {
     for(const code of retryCodes)additions[`error_${code}`]=generated[locale].retry;
     for(const code of recoveryCodes)additions[`error_${code}`]=generated[locale].recovery;
+    for(const code of verifyCodes)additions[`error_${code}`]=generated[locale].verify;
+    for(const code of releaseCodes)additions[`error_${code}`]=generated[locale].release;
+    for(const code of communicationCodes)additions[`error_${code}`]=additions.error_UNKNOWN;
+    for(const code of ownCodes)additions[`error_${code}`]=generated[locale][code];
+    for(const code of ["BTRFS_IDENTITY_INVALID","BTRFS_PROBE_FAILED","ROLLBACK_BOOT_IDENTITY_MISMATCH"])additions[`error_${code}`]=additions.error_SNAPSHOT_IDENTITY_MISMATCH;
+    additions.error_MANIFEST_SEQUENCE_PERSIST_FAILED=additions.error_STATE_WRITE_FAILED;
+    additions.error_AUTHORIZATION_REQUIRED=additions.error_AUTHORIZATION;
+    additions.error_REPORTED=generated[locale].reported;
     additions.error_ZYPPER_RESTART_REQUIRED=generated[locale].restart;
     additions.error_REBOOT_FAILED=additions.error_UNKNOWN;
     additions.error_ROLLBACK_FAILED=generated[locale].recovery;
