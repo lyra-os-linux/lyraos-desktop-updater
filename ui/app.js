@@ -17,7 +17,7 @@ const progress={Checking:5,Preflight:12,Planned:18,AwaitingConfirmation:18,Downl
 const titleKeys={Checking:"checking",Preflight:"checking",Blocked:"blocked",Planned:"planned",AwaitingConfirmation:"planned",Downloading:"downloading",Snapshotting:"snapshotting",Applying:"applying",ApplyingOffline:"applying",ReadyToReboot:"awaiting_reboot",AwaitingReboot:"awaiting_reboot",VerifyingBoot:"verifying",Completed:"completed",Failed:"failed",NeedsRecovery:"needs_recovery"};
 
 function request(kind,extra={}){return invoke("service_request",{request:{protocol_version:3,request_id:crypto.randomUUID(),kind,...extra}});}
-function errorMessage(error){if(error?.preflight)return error.preflight;const code=String(error?.message||error||"UNKNOWN").replace(/^Error:\s*/,"");return t(`error_${code}`)===`error_${code}`?t("error_UNKNOWN"):t(`error_${code}`);}
+function errorMessage(error){if(error?.preflight)return error.preflight;const code=String(error?.message||error||"UNKNOWN").replace(/^Error:\s*/,"");if(t(`error_${code}`)!==`error_${code}`)return t(`error_${code}`);return /^[A-Z][A-Z0-9_]+$/.test(code)?`${t("error_REPORTED")} (${code})`:t("error_UNKNOWN");}
 function rememberOperation(){localStorage.setItem(persistedOperationKey,JSON.stringify({operationId:state.operationId,planHash:state.planHash}));}
 function forgetOperation(){localStorage.removeItem(persistedOperationKey);}
 function setError(message){document.querySelector("#error").textContent=message||"";}
