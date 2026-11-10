@@ -1,4 +1,13 @@
 -------------------------------------------------------------------
+Tue Nov 10 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
+
+- Prepare 0.2.10: show a message for every post-boot and rollback
+  error code; unknown codes say the service reported an error and
+  show the code (lyraos-desktop#522).
+- Refresh updated_at when the offline worker and the verifier change
+  the operation state (lyraos-desktop#523).
+
+-------------------------------------------------------------------
 Sun Sep 27 2026 - Lyra OS Release <rodrigo@lyraos.com.br>
 
 - Prepare 0.2.9: request reboot after an owned offline operation settles.
