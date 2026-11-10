@@ -290,6 +290,7 @@ pub fn stage_release_upgrade(
     let snapshot = require_success("snapper", snapshot).map_err(ExecutionError::Snapshot)?;
     let snapshot_stdout = snapshot.stdout();
     state.snapshot_number = Some(parse_snapshot_number(&snapshot_stdout)?);
+    state.touch();
     save_state(state_root, state).map_err(ExecutionError::Persist)?;
     stage_system_update(&operation_dir)?;
     state
@@ -451,6 +452,7 @@ pub fn execute_update(
     let snapshot_stdout = snapshot.stdout();
     let snapshot_number = parse_snapshot_number(&snapshot_stdout)?;
     state.snapshot_number = Some(snapshot_number);
+    state.touch();
     save_state(state_root, state).map_err(ExecutionError::Persist)?;
 
     state
@@ -546,9 +548,10 @@ fn parse_snapshot_number(stdout: &str) -> Result<u64, ExecutionError> {
 
 fn persist(
     root: &std::path::Path,
-    state: &OperationStateRecord,
+    state: &mut OperationStateRecord,
     observer: &impl ExecutionObserver,
 ) -> Result<(), ExecutionError> {
+    state.touch();
     save_state(root, state).map_err(ExecutionError::Persist)?;
     observer.state_changed(state.state);
     Ok(())

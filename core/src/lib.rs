@@ -149,7 +149,44 @@ pub enum TransitionError {
     SnapshotNotRecorded,
 }
 
+/// Agora, em UTC e RFC 3339 com segundos (`2026-11-10T12:00:00Z`), o formato
+/// de `created_at`/`updated_at`. Sem crate de datas: o core não depende de uma.
+pub fn utc_now_rfc3339() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs());
+    rfc3339(secs)
+}
+
+/// Segundos desde 1970 em data civil (algoritmo de Howard Hinnant).
+fn rfc3339(secs: u64) -> String {
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+        rem / 3_600,
+        rem % 3_600 / 60,
+        rem % 60
+    )
+}
+
 impl OperationStateRecord {
+    /// Marca uma transição: toda gravação de estado que muda a operação
+    /// atualiza `updated_at`, que a probe e o verifier usam para ordenar
+    /// (lyraos-desktop#523).
+    pub fn touch(&mut self) {
+        self.updated_at = utc_now_rfc3339();
+    }
+
     pub fn transition_to(&mut self, next: OperationState) -> Result<(), TransitionError> {
         if self.schema_version != STATE_SCHEMA_VERSION {
             return Err(TransitionError::UnsupportedSchema);
@@ -214,6 +251,17 @@ pub const fn valid_transition(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn timestamps_are_rfc3339_utc_seconds() {
+        assert_eq!(super::rfc3339(0), "1970-01-01T00:00:00Z");
+        assert_eq!(super::rfc3339(951_782_400), "2000-02-29T00:00:00Z");
+        assert_eq!(
+            super::rfc3339(1_794_268_800 + 3_661),
+            "2026-11-10T01:01:01Z"
+        );
+        assert!(super::utc_now_rfc3339().ends_with('Z'));
+    }
+
     use super::*;
 
     fn record(kind: OperationKind, state: OperationState) -> OperationStateRecord {

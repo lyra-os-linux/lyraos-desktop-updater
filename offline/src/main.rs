@@ -141,6 +141,7 @@ fn run(operation_dir: &Path) -> Result<(), String> {
         return Err("signed manifest differs from staged plan".into());
     }
 
+    state.touch();
     save_state(Path::new(STATE_ROOT), &state).map_err(|_| "cannot persist offline state")?;
     revalidate_plan(
         operation_dir,
@@ -205,6 +206,7 @@ fn run(operation_dir: &Path) -> Result<(), String> {
         .transition_to(OperationState::AwaitingReboot)
         .map_err(|_| "invalid post-apply transition")?;
     state.last_completed_step = Some("offline-apply".into());
+    state.touch();
     save_state(Path::new(STATE_ROOT), &state).map_err(|_| "cannot persist result")?;
     request::remove_current(
         Path::new("/system-update"),
@@ -374,6 +376,7 @@ fn mark_recovery(operation_dir: &Path) -> Result<(), String> {
         state.state = OperationState::NeedsRecovery;
         state.error_code = Some("OFFLINE_APPLY_FAILED".into());
         state.sequence = state.sequence.saturating_add(1);
+        state.touch();
         save_state(Path::new(STATE_ROOT), &state).map_err(|_| "cannot persist recovery state")?;
     }
     request::remove_current(
