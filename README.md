@@ -72,7 +72,7 @@ O [RPM 0.2.7 foi qualificado em staging](docs/package-migration-staging-qualific
 145 testes Rust no OBS, migração e recuperação Btrfs/Snapper com seus binários,
 além da regressão PackageKit. O manifesto real do portal, sua migração com e
 sem traduções e a candidata ISO ainda precisam passar pelos respectivos gates.
-O canal release continua na 0.2.5.
+O canal release está na 0.2.10.
 
 A versão 0.2.10 mostra mensagem para todos os códigos de erro do pós-boot e
 do rollback e mantém o `updated_at` do estado em dia.
